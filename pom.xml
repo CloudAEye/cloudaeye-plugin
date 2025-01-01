@@ -70,7 +70,7 @@
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
       <artifactId>workflow-job</artifactId>
-      <version>1400.v7fd111b_ec82f</version>
+      <version>1472.ve4d5eca_143c4</version>
     </dependency>
 
     <!-- Git Plugin -->
