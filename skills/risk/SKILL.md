@@ -108,16 +108,15 @@ from the repository on GitHub, and a working tree has none of them.
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
    | `reviewers` | Who to ask and why. A name without `@` has no linked GitHub account. |
    | `reused` | CloudAEye's card on the pull request was already about this commit and window; nothing was recomputed. |
-   | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. Their weight is missing from the band — a gap, never a clean history. |
+   | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the band — a gap, never a clean history. |
    | `posted.status` | `ok` means the card is on the pull request. Anything else means it is **not** — say so and why. Never write "posted" without reading this. |
    | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
 
 ## Notes
 
-- **Quote the numbers the card prints, never others.** The score and every
-  row's points are on the card; do not compute, round or re-weight them. The
-  weights are not calibrated yet and the card's footnote says so: say it too
-  if the user leans on the exact figure.
+- **Quote the numbers the card prints, never others.** Do not compute, round
+  or re-derive a score from the rows. The score is not calibrated yet and the
+  card's footnote says so: say it too if the user leans on the exact figure.
 - **The author rows are about the pull request, not a judgement of the
   person.** Report them as the facts they are — counts and links.
 - Single-shot: one call, print the card, done.

@@ -201,7 +201,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
    - **`band_source: "judged"`, when present.** The arithmetic's band was moved one step after a model weighed the evidence — `band_reason` says why and `arithmetic_band` is what it moved from. The card already prints all three; do not drop them when summarising, and do not present the judged band as if the arithmetic produced it. When the field is absent the band is the arithmetic's and there is nothing to explain.
 
-   - **`total` is the score, out of 100, with `band` beside it.** Quote both as the card prints them (*60 / 100, High likelihood of low-quality code*); each signal row's points add up to it. Never compute another number from the bars or the weights. The card says the weights are not calibrated yet; say so too if the user leans on the exact figure.
+   - **`total` is the score, out of 100, with `band` beside it.** Quote both as the card prints them (*60 / 100, High likelihood of low-quality code*). Never compute another number from the bars or the finding counts. The card says the score is not calibrated yet; say so too if the user leans on the exact figure.
 
    - **Never say how the score is built.** No weights, no points per signal, no "out of N points measured": the result does not carry them, on purpose. When `unmeasured` is not empty, say the score covers only the signals that could be measured, and name the others.
 
