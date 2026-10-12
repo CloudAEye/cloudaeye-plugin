@@ -8,17 +8,11 @@ allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__
 
 ## What this is
 
-Nine signals, weighted to 100 points, over the change:
+Nine signals, scored together out of 100, over the change: duplicate code, hallucinated API,
+dead code, missing tests, high complexity, generic naming, boilerplate comments,
+overengineering and style inconsistency.
 
-| Signal | Weight | | Signal | Weight |
-|---|---|---|---|---|
-| Duplicate code | 20 | | Generic naming | 5 |
-| Hallucinated API | 20 | | Boilerplate comments | 5 |
-| Dead code | 15 | | Overengineering | 5 |
-| Missing tests | 15 | | Style inconsistency | 5 |
-| High complexity | 10 | | | |
-
-The weights feed four bands, and **the band is the output** — the underlying number is not reported, because the weights and saturation rates are not yet validated against a labelled sample and a three-digit score would claim a precision nothing has earned:
+The signals add up to a **score out of 100**, which the card prints with one of four bands. It is not yet validated against a labelled sample, and the card's footnote says so:
 
 **Low likelihood of slop** · **Review recommended** · **High likelihood of low-quality code** · **Strong candidate for manual review before merge**
 
@@ -203,13 +197,13 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
    - **First: a `degraded` block.** The review underneath ran with no post-edit source staged, so every signal read an empty file. **Report it as a failed run and stop — do not present the card, and never call it a low score.** The server does not cache a degraded run, so re-running once the cause is fixed gives a real answer.
 
-   - **Print `card` verbatim, inside a fenced code block.** Do not reformat it, do not turn it into a table, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, the header says what the total is out of, and a partially built signal says so on its own row. Every one of those is lost the moment the card is retyped.
+   - **Print `card` verbatim, inside a fenced code block.** Do not reformat it, do not turn it into a table, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, the header says when not every signal could be measured, and a partially built signal says so on its own row. Every one of those is lost the moment the card is retyped.
 
    - **`band_source: "judged"`, when present.** The arithmetic's band was moved one step after a model weighed the evidence — `band_reason` says why and `arithmetic_band` is what it moved from. The card already prints all three; do not drop them when summarising, and do not present the judged band as if the arithmetic produced it. When the field is absent the band is the arithmetic's and there is nothing to explain.
 
-   - **There is no number, and do not invent one.** The result carries a band, not a score. The weights and saturation rates behind the arithmetic are not yet validated against a labelled sample, so a three-digit total would claim a precision nothing has earned — the band is one of four buckets and survives being approximately right. Report the band. Do not compute, estimate or reconstruct a percentage from the bars or the weights.
+   - **`total` is the score, out of 100, with `band` beside it.** Quote both as the card prints them (*60 / 100, High likelihood of low-quality code*); each signal row's points add up to it. Never compute another number from the bars or the weights. The card says the weights are not calibrated yet; say so too if the user leans on the exact figure.
 
-   - **`measured_weight` / `out_of` are coverage, not score.** They say how much of the hundred points anything actually looked at. When they differ, say so — "scored over the 70 points we could measure" — because a band derived from seven signals means less than one derived from nine.
+   - **Never say how the score is built.** No weights, no points per signal, no "out of N points measured": the result does not carry them, on purpose. When `unmeasured` is not empty, say the score covers only the signals that could be measured, and name the others.
 
    - **Never report `unmeasured` as clean.** Each entry is a signal nothing looked at, which is a different statement from a signal that found nothing. If the user's question was "is this change slop?", an answer that quietly omits three unmeasured signals is not an answer. Name them and say why in one line — the card already carries the reason.
 
