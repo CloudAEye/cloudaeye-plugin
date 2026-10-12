@@ -1,5 +1,5 @@
 ---
-name: risk
+name: risk-score
 description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer, why, and who to ask. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, a verdict, what needs attention and the week-by-week evidence; it never edits code and finds no bugs in the change itself.
 when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, who should review it, or for a change-risk card. Pull requests only — the history is the repository's, read on GitHub.
 argument-hint: "<PR number like #412> [days, 7-90, default 21]"
@@ -59,8 +59,8 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 ### Pull requests only
 
-`/cloudaeye:risk 412` or `/cloudaeye:risk #412`, optionally followed by a window
-in days (`/cloudaeye:risk #412 30`). With no pull-request number, ask for one —
+`/cloudaeye:risk-score 412` or `/cloudaeye:risk-score #412`, optionally followed by
+a window in days (`/cloudaeye:risk-score #412 30`). With no pull-request number, ask for one —
 there is no working-tree mode: bugs, rework and the author's history are read
 from the repository on GitHub, and a working tree has none of them.
 
