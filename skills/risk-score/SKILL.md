@@ -1,7 +1,7 @@
 ---
 name: risk-score
-description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer, why, and who to ask. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, a verdict, what needs attention and the week-by-week evidence; it never edits code and finds no bugs in the change itself.
-when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, who should review it, or for a change-risk card. Pull requests only — the history is the repository's, read on GitHub.
+description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, a verdict, what needs attention and the week-by-week evidence; it names no reviewer, never edits code and finds no bugs in the change itself.
+when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Not for who should review it. Pull requests only — the history is the repository's, read on GitHub.
 argument-hint: "<PR number like #412> [days, 7-90, default 21]"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
@@ -92,8 +92,8 @@ from the repository on GitHub, and a working tree has none of them.
    it on #<n>*. End with the link. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
-   it opens with the verdict (the score, this PR's AI slop, the recommendation
-   and who to ask), then what needs attention, ranked, then the evidence week
+   it opens with the verdict (the score, this PR's AI slop and the
+   recommendation), then what needs attention, ranked, then the evidence week
    by week; every concern names a file, an issue or a pull request, and what
    could not be measured is listed rather than read as clean. Do not reorder it,
    round it, or summarise it into prose.
@@ -106,7 +106,6 @@ from the repository on GitHub, and a working tree has none of them.
    | `next_step` | The one action to suggest, chosen by rule. Say it as given; do not add others. |
    | `slop` | This PR's AI slop score (`score`, `band`) and where it came from (`ran`: `ran` — reviewed for this card; `reused` — an earlier review or risk card at this commit, nothing paid twice). `measured: false` blocks automatic approval: say so. |
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
-   | `reviewers` | Who to ask and why, as `name` and `why`. `name` is a GitHub login only where the card prints it with `@`; otherwise it is a git name — never @-mention it. |
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
    | `posted.status` | `ok` means the card is on the pull request. Anything else means it is **not** — say so and why. Never write "posted" without reading this. |
    | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
@@ -118,6 +117,9 @@ from the repository on GitHub, and a working tree has none of them.
   card's footnote says so: say it too if the user leans on the exact figure.
 - **The author rows are about the pull request, not a judgement of the
   person.** Report them as the facts they are — counts and links.
+- **Name no reviewer.** The card says whether a human must review the change,
+  never who. Do not suggest a person from its authors, file shares or blame,
+  and do not @-mention anyone it names.
 - Single-shot: one call, print the card, done.
 - If `change_risk` is unavailable (MCP not connected), warn and skip — **do
   not assess the risk yourself from `git log`**. The card's value is that every
