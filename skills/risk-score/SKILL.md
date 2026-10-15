@@ -104,11 +104,10 @@ from the repository on GitHub, and a working tree has none of them.
    | `score` | The risk score out of 100, as the card prints it. Never say how it is built (weights, points per row): the result does not carry them, on purpose. |
    | `band` | `low`, `medium` or `high`. **Empty means too little was measured to name one** — say that, never "low". |
    | `next_step` | The one action to suggest, chosen by rule. Say it as given; do not add others. |
-   | `slop` | This PR's AI slop score (`score`, `band`) and whether it was reused or run for this card (`ran`: `reused` / `ran`). `measured: false` blocks automatic approval: say so. |
+   | `slop` | This PR's AI slop score (`score`, `band`) and where it came from (`ran`: `ran` — reviewed for this card; `reused` — an earlier review or risk card at this commit, nothing paid twice). `measured: false` blocks automatic approval: say so. |
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
-   | `reviewers` | Who to ask and why. A name without `@` has no linked GitHub account. |
-   | `reused` | CloudAEye's card on the pull request was already about this commit and window; nothing was recomputed. |
-   | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the band — a gap, never a clean history. |
+   | `reviewers` | Who to ask and why, as `name` and `why`. `name` is a GitHub login only where the card prints it with `@`; otherwise it is a git name — never @-mention it. |
+   | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
    | `posted.status` | `ok` means the card is on the pull request. Anything else means it is **not** — say so and why. Never write "posted" without reading this. |
    | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
 
