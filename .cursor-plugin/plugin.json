@@ -1,0 +1,15 @@
+{
+  "name": "cloudaeye",
+  "version": "0.20.0",
+  "description": "CloudAEye code reviews, security checks, change descriptions, and fix planning.",
+  "author": {
+    "name": "CloudAEye",
+    "email": "support@cloudaeye.com"
+  },
+  "homepage": "https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html",
+  "repository": "https://github.com/CloudAEye/claude-plugin",
+  "keywords": ["code-review", "security", "pre-commit", "ai"],
+  "skills": "./skills/",
+  "rules": "./cursor/rules/",
+  "mcpServers": "./cursor/mcp.json"
+}

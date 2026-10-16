@@ -2,8 +2,40 @@
 name: describe
 description: Describe the uncommitted changes in this repo — a Change Description heading and an Important Changes bullet list, in plain markdown ready to paste into a PR or a commit message. Trivial diffs short-circuit to one line.
 when_to_use: Use when the user asks what changed, for a PR description, a commit message, or a summary of the pending diff.
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__describe_change", "mcp__cloudaeye__describe_change"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__describe_change", "mcp__cloudaeye__describe_change", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+After the analysis call below, inspect the initial response before polling.
+During rollout, an initial response without a `job_id` whose `status` is not
+`queued`, `running`, or `retrying` is synchronous: use that response directly
+with this tool's original output rules. An initial `status: error` is a refusal,
+not successful fallback; report it and stop. Never poll synchronous output.
+An active queued response without a non-empty `job_id` is malformed; stop.
+
+A queued submission returns `{"job_id": "...", "status": "queued"}`, not the
+final output. Keep that `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds while
+outer `status` is `queued`, `running`, or `retrying`, for at most 60 polling
+calls and a 30-minute wall-clock deadline from submission, whichever comes
+first. Check the deadline before each call. At either limit, stop, report
+that the job is still pending with its job ID, and preserve that ID to resume
+later. Do not begin dependent actions or enqueue replacement work on timeout.
+Never re-submit the analysis to check progress.
+
+On outer `completed`, require an inner `result` dictionary and treat
+it as **the response** in the remaining steps; it preserves the tool's original
+fields, not a universal `result.card`. Completion is not a clean verdict.
+Report an inner `status: error` as a refusal and stop without retrying.
+Stop and report outer `failed` or `error`. If a saved result expired or is
+missing, say so, never call it empty/clean, and do not automatically enqueue
+replacement work. If polling is unavailable, retain the ID and report the
+limitation. Poll using the submitting OAuth account.
+
+Finish this job before beginning dependent actions. Do not overlap a review
+with a fix/re-inspection workflow on the same session, or edit/re-upload to
+make a pending review appear to cover new code.
 
 ## Steps
 
@@ -133,7 +165,8 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 ## Notes
 
-- This is a **single-shot** skill — one call, print the output, done. No loop, no fix-and-retry.
+- This is a **single-enqueue** skill: submit once, poll the job, print the
+  original description, done. No resubmission or fix-and-retry loop.
 - Good moments to invoke: before opening a PR, before writing a commit message, when the user asks "what did I just change?"
 - Pre-commit only: the diff is always `git diff` (working tree vs `HEAD`). Committing moves `HEAD`; the review session persists.
 - Without a `client_git_token` / `client_git_owner` configured on the server, the code-context refresh is skipped and the description falls back to diff-only analysis (still works, just less precise on blast radius).

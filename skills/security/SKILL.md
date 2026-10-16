@@ -2,9 +2,41 @@
 name: security
 description: Security review of the uncommitted changes in this repo, of one file or directory of them, or of an open pull request given its number — OWASP-style application security plus the LLM, AI-agent and MCP surfaces, and secrets leaked on the changed lines. Reports findings with file, line and severity; it never edits code on its own.
 when_to_use: Use when the change touches auth, untrusted input, secrets, crypto, deserialization, prompts, tool definitions or agent orchestration, or whenever the user asks for a security review.
-argument-hint: "[optional: a path, a PR number like #5, and/or --critical]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff"]
+argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+After the analysis call below, inspect the initial response before polling.
+During rollout, an initial response without a `job_id` whose `status` is not
+`queued`, `running`, or `retrying` is synchronous: use that response directly
+with this tool's original output rules. An initial `status: error` is a refusal,
+not successful fallback; report it and stop. Never poll synchronous output.
+An active queued response without a non-empty `job_id` is malformed; stop.
+
+A queued submission returns `{"job_id": "...", "status": "queued"}`, not the
+final output. Keep that `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds while
+outer `status` is `queued`, `running`, or `retrying`, for at most 60 polling
+calls and a 30-minute wall-clock deadline from submission, whichever comes
+first. Check the deadline before each call. At either limit, stop, report
+that the job is still pending with its job ID, and preserve that ID to resume
+later. Do not begin dependent actions or enqueue replacement work on timeout.
+Never re-submit the analysis to check progress.
+
+On outer `completed`, require an inner `result` dictionary and treat
+it as **the response** in the remaining steps; it preserves the tool's original
+fields, not a universal `result.card`. Completion is not a clean verdict.
+Report an inner `status: error` as a refusal and stop without retrying.
+Stop and report outer `failed` or `error`. If a saved result expired or is
+missing, say so, never call it empty/clean, and do not automatically enqueue
+replacement work. If polling is unavailable, retain the ID and report the
+limitation. Poll using the submitting OAuth account.
+
+Finish this job before beginning dependent actions. Do not overlap a review
+with a fix/re-inspection workflow on the same session, or edit/re-upload to
+make a pending review appear to cover new code.
 
 ## When to run
 
@@ -20,7 +52,7 @@ Do not run this uninvited after an ordinary coding task. Do suggest it (without 
 
 ## Three modes
 
-The argument decides which. Read it before anything else:
+Parse the model options and severity flags below first. Decide the mode only from the remaining path or PR argument:
 
 | Argument | Mode |
 |---|---|
@@ -30,6 +62,31 @@ The argument decides which. Read it before anything else:
 | `--critical` `--high` `--medium` `--low` | Combine with any mode above — reports that level **and higher**. |
 
 Digits mean a pull request. If the user really means a directory named `405`, they write `./405` and you treat it as a path.
+
+### Model options
+
+These options apply only to this invocation; they never change saved settings.
+
+| Flag | `inspect_diff` argument | Value |
+|---|---|---|
+| `--model` | `review_model` | Model family (for example, `gpt`) or exact model ID. |
+| `--model-provider` | `model_provider` | Hosting provider (for example, `azure`). |
+| `--invert-model` | `invert_model` | Boolean `true` or `false`, never a string. |
+
+Omit every option the user did not supply. In particular, omitted `invert_model`
+uses the tenant's saved inversion setting, not a client-side default. When
+inversion is enabled, this Claude Code flow uses the configured GPT reviewer.
+An explicit model or provider takes precedence over inversion. Pass all supplied
+options to the server; it resolves supported models, providers, and credentials.
+Reject missing values, unknown flags, or an inversion value other than `true`
+or `false` before initializing a session. Report server selection errors and
+stop; do not retry with a different model or silently drop an option.
+
+```text
+/cloudaeye:security --invert-model false
+/cloudaeye:security src/auth/ --high --model gpt
+/cloudaeye:security --model-provider azure
+```
 
 ### Path mode
 
@@ -220,6 +277,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
    - `intent`: the summary from step 2
    - `profile`: `"security"` — **always this value from this skill.**
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Omit it entirely otherwise; do not default to a floor the user did not ask for.
+   - `review_model`, `model_provider`, `invert_model`: only when explicitly supplied, using the mappings in **Model options** above. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title`. Do not pass `review_config` or `report_types`; they override the profile and are how you accidentally ship a half-configured security pass.
 
    Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff`; it is pre-approved in this skill's frontmatter.
@@ -248,7 +306,7 @@ The three extended security report types are **pattern-gated server-side**: the 
 
 - **A pull-request review is its own session,** separate from the working-tree one for the same repository, so it can never overwrite unfinished local work. Re-running the same PR resumes that PR's session; if the PR has new commits the server re-fetches, and if it does not, nothing is re-derived.
 - **`/cloudaeye:implement` does not work on a pull-request review.** Its plans describe edits to a working tree, and the source for a PR lives on GitHub. If the user wants to fix what the review found, they check the branch out and review again locally. Say that rather than offering a plan that cannot be applied.
-- **Single-shot** — one call, report the output, done. No fix-and-retry loop inside the skill.
+- Submit analysis once, resolve its response using **Queued Result**, report the output, then stop. No fix-and-retry loop inside the skill.
 - Bug-only categories (performance, dead imports, duplicate code) do **not** run here. For bugs and security in one pass, use `/cloudaeye:review`.
 - Pre-commit only: the diff is always `git diff` (working tree vs `HEAD`). Committing moves `HEAD`; the review session persists and its recorded `head` is refreshed on the next call.
 - A clean `approve` means no finding cleared the reviewer's confidence bar on the changed lines — it is not a security audit of the whole repo. Say so if the user reads it as one.

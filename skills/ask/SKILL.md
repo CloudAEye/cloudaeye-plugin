@@ -3,8 +3,40 @@ name: ask
 description: Ask a free-form question about the uncommitted changes in this repo and get an answer grounded in the repository's code graph — callers, definitions and usage traces, not just the diff text. Returns an answer, not a review, and never edits code.
 when_to_use: Use for blast-radius questions ("what else calls this?"), "what did this do before?", "is this pattern used elsewhere?", or a second opinion the coding agent cannot give from its own context window.
 argument-hint: "[question about the pending change]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__ask", "mcp__cloudaeye__ask"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__ask", "mcp__cloudaeye__ask", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+After the analysis call below, inspect the initial response before polling.
+During rollout, an initial response without a `job_id` whose `status` is not
+`queued`, `running`, or `retrying` is synchronous: use that response directly
+with this tool's original output rules. An initial `status: error` is a refusal,
+not successful fallback; report it and stop. Never poll synchronous output.
+An active queued response without a non-empty `job_id` is malformed; stop.
+
+A queued submission returns `{"job_id": "...", "status": "queued"}`, not the
+final output. Keep that `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds while
+outer `status` is `queued`, `running`, or `retrying`, for at most 60 polling
+calls and a 30-minute wall-clock deadline from submission, whichever comes
+first. Check the deadline before each call. At either limit, stop, report
+that the job is still pending with its job ID, and preserve that ID to resume
+later. Do not begin dependent actions or enqueue replacement work on timeout.
+Never re-submit the analysis to check progress.
+
+On outer `completed`, require an inner `result` dictionary and treat
+it as **the response** in the remaining steps; it preserves the tool's original
+fields, not a universal `result.card`. Completion is not a clean verdict.
+Report an inner `status: error` as a refusal and stop without retrying.
+Stop and report outer `failed` or `error`. If a saved result expired or is
+missing, say so, never call it empty/clean, and do not automatically enqueue
+replacement work. If polling is unavailable, retain the ID and report the
+limitation. Poll using the submitting OAuth account.
+
+Finish this job before beginning dependent actions. Do not overlap a review
+with a fix/re-inspection workflow on the same session, or edit/re-upload to
+make a pending review appear to cover new code.
 
 ## When to run
 

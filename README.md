@@ -1,6 +1,6 @@
 # CloudAEye for Claude Code
 
-Pre-commit code review, security scanning, AI-slop scoring, change descriptions, questions, task verification, pull-request hygiene checks, docstring and unit-test generation, issue explanation, tracking-issue creation, and fix planning for Claude Code.
+Pre-commit code review, security scanning, AI-slop scoring, change descriptions, questions, task verification, pull-request hygiene checks, docstring and unit-test generation, component ownership, issue explanation, tracking-issue creation, and fix planning for Claude Code.
 
 ## Commands
 
@@ -21,10 +21,11 @@ Pre-commit code review, security scanning, AI-slop scoring, change descriptions,
 | `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a review band with supporting evidence. |
 | `/cloudaeye:add-docs` | Generate docstrings for undocumented code in an open pull request and post them as review suggestions. Reports which suggestions were generated and which reached the PR. |
 | `/cloudaeye:add-tests` | Generate unit tests for uncovered code in an open pull request, including new test files where needed. Posts the tests as review suggestions for you to review and run. |
+| `/cloudaeye:create-owners` | Create an editable OWNERS.md using local Git history. No server or authentication required. Never overwrites existing ownership. |
 | `/cloudaeye:explain` | Explain a Jira or GitHub issue using the code it touches. Describes the relevant components, their current behavior, and surrounding code so you can understand the work before implementing it. |
 | `/cloudaeye:create-issue` | Turn selected findings from the last review into Jira tickets or GitHub issues, with an optional assignee and note. Returns ticket links and identifies findings already tracked in the same session. |
 
-The review commands report results and do not edit code. `/cloudaeye:implement` is the one that leads to edits, and even there the server only returns a plan — Claude applies it, and you re-run the review to confirm the fix landed.
+The review commands report results and do not edit code. `/cloudaeye:implement` leads to code edits, and even there the server only returns a plan — Claude applies it, and you re-run the review to confirm the fix landed. `/cloudaeye:create-owners` creates only the requested local ownership file.
 
 Five commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow` and `/cloudaeye:review-arch` can post their cards there when asked, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
 
@@ -56,6 +57,25 @@ Every review command runs in one of two modes: with no argument it reviews your 
 
 `/cloudaeye:control-flow` shows what the change did to the order of calls, `/cloudaeye:review-arch` what it did to the layers and the boundaries between them, and `/cloudaeye:slop-score` how much careful reading it needs — all useful before a PR on a change you did not write line by line.
 
+### Reviewer model options
+
+`/cloudaeye:review`, `/cloudaeye:inspect`, and `/cloudaeye:security` use the
+tenant's saved model and inversion settings by default. In Claude Code,
+enabled inversion selects the configured GPT reviewer. Override only this run:
+
+```text
+/cloudaeye:review --invert-model false
+/cloudaeye:inspect src/auth/ --high --model gpt
+/cloudaeye:security --model-provider azure --model <model-id>
+```
+
+`--invert-model true|false` overrides the saved setting. `--model` accepts a
+supported family or exact model ID; `--model-provider` selects its hosting
+provider. An explicit model or provider takes precedence over inversion.
+Available models, credentials, and plan restrictions are checked by the server;
+an unavailable selection returns an error rather than silently switching models.
+These options do not update saved configuration.
+
 ### After you push
 
 ```text
@@ -72,6 +92,40 @@ The pull request must be open, merge into your integrated branch, not come from 
 
 Full details of every command — what to pass, what comes back, and how to read it — are in the [User Guide](https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html).
 
+### Component ownership
+
+Run `/cloudaeye:create-owners` without arguments to create ownership files at the
+repository root and in all non-ignored subdirectories, including empty directories.
+Existing files are skipped; Git metadata and symlink directories are excluded.
+An explicit directory limits creation to that directory only.
+
+Run `/cloudaeye:create-owners src/payments` (or `.` for the repository root) to
+generate an uncommitted `OWNERS.md` using local `git blame` on text files at HEAD.
+There is no date or commit cap. Only Git and Python are needed. The directory must
+already exist. Lead Maintainer and Team Members are populated directly: GitHub
+noreply emails supply inferred @usernames, otherwise Git names/emails are used.
+Confirm handles and replace names/emails before sharing; fill in unknown team/contact details.
+Existing ownership is never overwritten. Shallow history produces a warning.
+Each owner includes an ownership percentage: their share of current committed
+text lines in that directory (including descendants). The author with the most
+lines becomes the inferred lead. Blank lines and comments count; binary files,
+symlinks, submodules, and OWNERS.md files do not. Uncommitted changes are ignored. The
+denominator includes all contributors, not just the top three shown.
+
+```markdown
+# Component Ownership
+- Lead Maintainer: @lead
+- Team Name: Payments
+- Team Members: @lead, @member
+- Contact Slack: #payments
+- Contact Email: payments@example.com
+- Risk Level: normal
+```
+
+Edit the inferred owners before merging. This command only creates local
+ownership files when explicitly invoked; it does not request reviews or add
+webhook automation.
+
 ## Install
 
 ```text
@@ -80,6 +134,42 @@ Full details of every command — what to pass, what comes back, and how to read
 ```
 
 Restart Claude Code so the MCP server connects. If you previously installed the skills manually, remove those copies to avoid loading stale commands.
+
+## Cursor
+
+The same repository also packages a native Cursor plugin. It reuses `skills/`
+and the bundled scripts; it does not duplicate review workflows. Cursor uses
+`cursor/mcp.json` with the pinned `mcp-remote` OAuth bridge, which connects to
+`https://api.cloudaeye.com/mcp`. The bridge registers a public native client with a
+standard loopback callback for browser sign-in.
+Its metadata is in `cursor/oauth-client-metadata.json`. OAuth and PKCE remain
+required; no API key or client secret is bundled. Node.js and npm/npx must be
+available. The first launch downloads the pinned bridge package.
+
+From this repository, register the local plugin on Windows:
+
+```powershell
+.\scripts\install_cursor_plugin.ps1
+```
+
+The installer creates a real directory at `~/.cursor/plugins/local/cloudaeye`.
+Cursor skips external junctions and symlinks. Existing installations are not
+overwritten; use `-DirectoryName cloudaeye-manual` for an unused alternative.
+Updates require refreshing the installed files. Restart Cursor, open Customize,
+enable CloudAEye, and reload its MCP connection. The OAuth bridge opens browser
+sign-in when authentication is needed. Select a skill from the `/` menu; do not
+assume Claude's namespaced command spelling is used. No local MCP server is
+needed. If CloudAEye was already added as a separate MCP connection, disable
+that duplicate. Claude, Codex, and VS Code retain their
+direct HTTP connection in `.mcp.json`.
+
+Cursor-only compatibility guidance maps client-specific tool aliases to the
+actual CloudAEye tools and resolves bundled script paths from the plugin
+installation. Review scopes, job polling, and write-approval gates stay shared.
+
+This package supports Cursor's native plugin format. See the
+[Cursor plugin reference](https://cursor.com/docs/reference/plugins) for its
+manifest and local installation conventions.
 
 ## Authenticate
 
@@ -112,15 +202,40 @@ Then run `/reload-plugins` in a terminal session, or start a new session. In the
 
 The plugin uses `https://api.cloudaeye.com/mcp` by default. Set `CLOUDAEYE_URL` before starting Claude Code to use a self-hosted OAuth-enabled MCP endpoint.
 
+For Cursor, replace the server URL in `cursor/mcp.json` before running the
+installer. Use an HTTPS endpoint that supports OAuth.
+
 ## Data Flow
 
-Each operational skill:
+Each session-based review skill:
 
 1. Detects the provider, repository URL, current branch, and base branch.
 2. Calls the session-free `initialize_repository` tool; it opens setup only when the provider is not connected.
 3. Calls the OAuth-authenticated `start_session` tool after initialization.
 4. Builds and uploads the diff with `git diff` after `git add --intent-to-add .` so untracked files are included.
 5. Calls the requested MCP review tool with the returned session ID.
+6. Keeps its returned `job_id` and polls `get_job_result` every 30 seconds
+   until terminal, never re-submitting to check progress. On completion,
+   renders the original tool dictionary under `result`, not a universal card.
+
+Queued tools are `inspect_diff` (inspect/security/review profiles),
+`describe_change`, `ask`, `implement`, `check_task`,
+`review_arch`, `control_flow`, `slop_score`, and `explain`. The latter still
+delegates issue analysis to CloudAEye's backend; its MCP worker follows that
+same backend run. `wait_seconds` is retained but deprecated for `explain`.
+`ask` remains an answer, not a review; `implement` returns plans, not edits.
+`create_issue` returns ticket results directly, without a job ID or polling.
+
+Wait for a review to complete before planning fixes or creating tickets from
+its findings; do not overlap review/fix workflows on one session. Ticket and
+PR-comment writes retain their approval gates. Report uncertain delivery
+without automatically repeating the write. A completed job may still carry
+an original refusal/error; expired saved results are not empty or clean work.
+
+Initialization, session creation, and Git diff upload do not enqueue work.
+
+`create-owners` runs locally without initialization, MCP, authentication, or network
+access. It neither stages files nor uploads a working-tree diff.
 
 The upload token is placed in a private temporary curl config, is not printed, and is deleted when the upload command exits. The `.cloudaeye/` scratch directory contains only gitignored session diff data. Previously stored credential files are neither read nor changed.
 

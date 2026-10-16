@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "cloudaeye": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "--ignore-scripts",
+        "mcp-remote@0.14.3",
+        "https://api.cloudaeye.com/mcp",
+        "--transport",
+        "http-only",
+        "--static-oauth-client-metadata",
+        "@${CURSOR_PLUGIN_ROOT}/cursor/oauth-client-metadata.json"
+      ],
+      "cwd": "${CURSOR_PLUGIN_ROOT}"
+    }
+  }
+}

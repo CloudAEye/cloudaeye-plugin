@@ -2,8 +2,41 @@
 name: control-flow
 description: Draw what the uncommitted changes in this repo did to the flow of control, as a mermaid sequence diagram with every message marked added, removed or retargeted. The arrows are resolved from the repository's code graph rather than inferred from the diff. Reports; it never edits code.
 when_to_use: Use when the user asks what the change does to the flow, wants a sequence diagram for a PR description, or asks which components now talk to each other and in what order. For a prose summary of the change use /cloudaeye:describe instead.
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__control_flow", "mcp__cloudaeye__control_flow"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__control_flow", "mcp__cloudaeye__control_flow", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+After the analysis call below, inspect the initial response before polling.
+During rollout, an initial response without a `job_id` whose `status` is not
+`queued`, `running`, or `retrying` is synchronous: use that response directly
+with this tool's original output rules. An initial `status: error` is a refusal,
+not successful fallback; report it and stop. Never poll synchronous output.
+An active queued response without a non-empty `job_id` is malformed; stop.
+
+A queued submission returns `{"job_id": "...", "status": "queued"}`, not the
+final output. Keep that `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds while
+outer `status` is `queued`, `running`, or `retrying`, for at most 60 polling
+calls and a 30-minute wall-clock deadline from submission, whichever comes
+first. Check the deadline before each call. At either limit, stop, report
+that the job is still pending with its job ID, and preserve that ID to resume
+later. Do not begin dependent actions or enqueue replacement work on timeout.
+Never re-submit the analysis to check progress.
+
+On outer `completed`, require an inner `result` dictionary and treat
+it as **the response** in the remaining steps; it preserves the tool's original
+fields, not a universal `result.card`. Completion is not a clean verdict.
+Report an inner `status: error` as a refusal and stop without retrying.
+Stop and report outer `failed` or `error`. If a saved result expired or is
+missing, say so, never call it empty/clean, and do not automatically enqueue
+replacement work. If polling is unavailable, retain the ID and report the
+limitation. Poll using the submitting OAuth account.
+
+Finish this job before beginning dependent actions. Do not overlap a review
+with a fix/re-inspection workflow on the same session, or edit/re-upload to
+make a pending review appear to cover new code.
+
 
 ## Steps
 
@@ -138,7 +171,7 @@ prompt for a key.
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
    **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
-2. Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` (pre-approved in this
+2. Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
    skill's frontmatter) with `session_id` from step 1. Leave `depth`, `label`
    and `cross_repo` at their defaults unless the user asks otherwise — the tool
    docstring explains each. Two arguments need a decision:
@@ -151,7 +184,12 @@ prompt for a key.
      yes. Naming a PR in the argument is asking for a diagram of it, not asking
      to comment on it. Needs a session opened with a `pr_number`.
 
-3. Print the `card` field **verbatim, every mermaid fence included**, then stop.
+3. Resolve the response using **Queued Result** above, including its
+   synchronous rollout fallback and bounded polling deadline. Keep the same
+   job ID throughout; never call `control_flow` again to check progress. Do not
+   continue below until a usable original response has been obtained.
+
+4. Print `result.card` **verbatim, every mermaid fence included**, then stop.
 
    The fence is standard mermaid and stays mermaid: it is the same block that
    gets posted on the pull request, so what the developer reads here must be
@@ -202,12 +240,17 @@ prompt for a key.
    | `cross_repo.unmeasured` | The search **could not run**. Not "no callers found" — say it did not happen and why. |
    | `cross_repo.not_indexed` | Some connected repositories have no graph and could not be searched. Say how many; the one that breaks may be among them. |
    | `pr_url` | A pull-request run. **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. Absent on a working-tree run: give no link, and never construct one. |
-   | `posted.status` | `ok` means the card is on the pull request. `unavailable` or `failed` means it is **not** — say so and why. Never write "posted" without reading this. |
+   | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this, and never re-enqueue to retry a post. |
    | `context_refresh.status` `skipped`/`failed` | The graph was not refreshed with this diff; the diagram may describe pre-edit code. Say so in one line and quote `context_refresh.reason`. |
 
 ## Notes
 
-- **Single-shot**: one call, print the card, done. No loop, no fix-and-retry.
+- Finish the current job before dependent planning/ticket actions. Do not
+  overlap review, editing, or re-inspection workflows on the same session;
+  dependent tools read the completed session report, not a pending job.
+
+- **Single enqueue**: call the analysis tool once, poll that job, print its
+  card, done. No re-enqueue or fix-and-retry loop.
 - Good moments: before opening a PR; when a reviewer asks "what does this
   actually change about the flow?"; when a change touches several components
   and the ordering matters.

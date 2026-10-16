@@ -1,0 +1,7 @@
+/.claude/
+__pycache__/
+*.py[cod]
+/skills/OWNERS.md
+
+# Unreleased local draft.
+/skills/assign-reviewer/

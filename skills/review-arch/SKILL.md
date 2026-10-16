@@ -2,8 +2,41 @@
 name: review-arch
 description: Review what the uncommitted changes in this repo (or a pull request) did to the architecture, in three pictures, widest first — the tenant's services as their deployment files wire them, the repository's layers and components with the services that call it, and what the change did to the layers — then the findings (layer violations, new cycles, first-in-layer boundary calls, undeclared dependencies, a break another repository would feel) and the questions a senior engineer would ask of this change. The layers come from the repository's Architecture Model and the edges from its code graph; nothing is inferred from the diff text. Reports; it never edits code and finds no bugs.
 when_to_use: Use before opening or merging a pull request that adds a dependency, a new module, a new external system or crosses a layer, when a reviewer asks "does this fit the architecture", or when the user asks for an architecture review, a layer check, or "what does this change touch". For bugs use /cloudaeye:inspect; for the call sequence use /cloudaeye:control-flow.
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__review_arch", "mcp__cloudaeye__review_arch"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__review_arch", "mcp__cloudaeye__review_arch", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+After the analysis call below, inspect the initial response before polling.
+During rollout, an initial response without a `job_id` whose `status` is not
+`queued`, `running`, or `retrying` is synchronous: use that response directly
+with this tool's original output rules. An initial `status: error` is a refusal,
+not successful fallback; report it and stop. Never poll synchronous output.
+An active queued response without a non-empty `job_id` is malformed; stop.
+
+A queued submission returns `{"job_id": "...", "status": "queued"}`, not the
+final output. Keep that `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds while
+outer `status` is `queued`, `running`, or `retrying`, for at most 60 polling
+calls and a 30-minute wall-clock deadline from submission, whichever comes
+first. Check the deadline before each call. At either limit, stop, report
+that the job is still pending with its job ID, and preserve that ID to resume
+later. Do not begin dependent actions or enqueue replacement work on timeout.
+Never re-submit the analysis to check progress.
+
+On outer `completed`, require an inner `result` dictionary and treat
+it as **the response** in the remaining steps; it preserves the tool's original
+fields, not a universal `result.card`. Completion is not a clean verdict.
+Report an inner `status: error` as a refusal and stop without retrying.
+Stop and report outer `failed` or `error`. If a saved result expired or is
+missing, say so, never call it empty/clean, and do not automatically enqueue
+replacement work. If polling is unavailable, retain the ID and report the
+limitation. Poll using the submitting OAuth account.
+
+Finish this job before beginning dependent actions. Do not overlap a review
+with a fix/re-inspection workflow on the same session, or edit/re-upload to
+make a pending review appear to cover new code.
+
 
 ## Steps
 
@@ -138,7 +171,7 @@ prompt for a key.
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
    **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
-2. Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` (pre-approved in this
+2. Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` **once** (pre-approved in this
    skill's frontmatter) with `session_id` from step 1. Two arguments need a
    decision:
 
@@ -156,7 +189,12 @@ prompt for a key.
      at the end — so there is nothing to describe in chat beyond whether it
      landed.
 
-3. Print the `card` field **verbatim, every mermaid fence included**, then
+3. Resolve the response using **Queued Result** above, including its
+   synchronous rollout fallback and bounded polling deadline. Keep the same
+   job ID throughout; never call `review_arch` again to check progress. Do not
+   continue below until a usable original response has been obtained.
+
+4. Print `result.card` **verbatim, every mermaid fence included**, then
    stop.
 
    The card is rendered server-side because what it may show is the feature.
@@ -218,12 +256,17 @@ prompt for a key.
    | `service_map` | Which of the tenant's other repositories call this one, found in their code. `measured: false` means callers were not searched; otherwise "no caller" is only as wide as `searched`. |
    | `cross_repo` | `breaks` / `consumers`: something this change deleted or re-signed is used in another repository, and each consumer is a numbered finding. `measured: false` means that was not checked — not that nothing breaks. |
    | `pr_url` | A pull-request run. **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. Absent on a working-tree run: give no link, and never construct one. |
-   | `posted.status` | `ok` means the card is on the pull request. `unavailable` or `failed` means it is **not** — say so and why. Never write "posted" without reading this. |
+   | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this, and never re-enqueue to retry a post. |
    | `context_refresh.status` `skipped`/`failed` | The graph was not refreshed with this diff; the review may describe pre-edit code. Say so in one line and quote `context_refresh.reason`. |
 
 ## Notes
 
-- **Single-shot**: one call, print the card, done. No loop, no fix-and-retry.
+- Finish the current job before dependent planning/ticket actions. Do not
+  overlap review, editing, or re-inspection workflows on the same session;
+  dependent tools read the completed session report, not a pending job.
+
+- **Single enqueue**: call the analysis tool once, poll that job, print its
+  card, done. No re-enqueue or fix-and-retry loop.
   The findings carry numbers; `/cloudaeye:implement [1,3]` plans fixes for
   them the same way it does for a review's.
 - Good moments: a change that adds a dependency, a new module, an external
