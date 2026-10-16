@@ -1,6 +1,6 @@
 # CloudAEye for Claude Code
 
-Pre-commit code review, security scanning, AI-slop scoring, change descriptions, questions, task verification, pull-request hygiene checks, docstring and unit-test generation, component ownership, issue explanation, tracking-issue creation, and fix planning for Claude Code.
+Pre-commit code review, security scanning, AI-slop scoring, pull-request change risk, change descriptions, questions, task verification, pull-request hygiene checks, docstring and unit-test generation, component ownership, issue explanation, tracking-issue creation, and fix planning for Claude Code.
 
 ## Commands
 
@@ -18,7 +18,8 @@ Pre-commit code review, security scanning, AI-slop scoring, change descriptions,
 | `/cloudaeye:check-task` | Verify whether the pending change fulfills a Jira ticket, GitHub issue, or written specification. Returns a DONE, PARTIAL, or NOT DONE verdict with details of missing work. |
 | `/cloudaeye:check-pr` | Check an open PR's docstring and test coverage, README freshness, dependencies, title and description, duplicate code, and secrets. Runs the repository's configured checklist and posts the detailed report on the PR. |
 | `/cloudaeye:implement` | Turn selected review findings into a fix plan. Identifies what to change, where to change it, and the affected callers, related defects, and tests. |
-| `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a review band with supporting evidence. |
+| `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a score out of 100 and its review band, with the findings behind them. |
+| `/cloudaeye:risk-score` | Decide whether an open PR needs a human reviewer, why, and who to ask. Weighs the changed files' bug history, rework and ownership with the author's recent PRs and this PR's AI slop score, and posts the risk card on the PR when you agree. |
 | `/cloudaeye:add-docs` | Generate docstrings for undocumented code in an open pull request and post them as review suggestions. Reports which suggestions were generated and which reached the PR. |
 | `/cloudaeye:add-tests` | Generate unit tests for uncovered code in an open pull request, including new test files where needed. Posts the tests as review suggestions for you to review and run. |
 | `/cloudaeye:create-owners` | Create an editable OWNERS.md using local Git history. No server or authentication required. Never overwrites existing ownership. |
@@ -27,7 +28,7 @@ Pre-commit code review, security scanning, AI-slop scoring, change descriptions,
 
 The review commands report results and do not edit code. `/cloudaeye:implement` leads to code edits, and even there the server only returns a plan — Claude applies it, and you re-run the review to confirm the fix landed. `/cloudaeye:create-owners` creates only the requested local ownership file.
 
-Five commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow` and `/cloudaeye:review-arch` can post their cards there when asked, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
+Six commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow`, `/cloudaeye:review-arch` and `/cloudaeye:risk-score` can post their cards there when asked, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
 
 ## Command help
 
@@ -82,6 +83,7 @@ These options do not update saved configuration.
 /cloudaeye:review #412              the full review, on the pull request
 /cloudaeye:control-flow #412        before/after diagrams, and who in other repositories calls what changed
 /cloudaeye:review-arch #412         the system, the repository's layers, what the change crossed, and what to ask before merging
+/cloudaeye:risk-score #412          does it need a human reviewer, why, and who to ask
 /cloudaeye:check-pr #412            the hygiene checklist — description, title, docs, tests, dependencies
 /cloudaeye:add-docs #412            docstrings, posted as suggestions on the pull request
 /cloudaeye:add-tests #412           unit tests, posted the same way
