@@ -77,3 +77,6 @@ for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/
   comment.
 - Re-running is safe: it changes Contributors only when the numbers moved, and
   never touches Teams.
+- `/cloudaeye:assign-reviewer` runs this at the root on its own when the target
+  branch has no `OWNERS.md`, and uses the files from the working tree until they
+  are merged.

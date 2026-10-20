@@ -1,6 +1,6 @@
 ---
 name: assign-reviewer
-description: Recommend who should review an open pull request, say why, and suggest what they should check — from code ownership (OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's review queue. Requests the review on GitHub only after you name the people.
+description: Recommend who should review an open pull request, say why, and suggest what they should check — from code ownership (OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's review queue. When the repository has no OWNERS.md yet, it creates ownership at the root from git history first, in your working tree. Requests the review on GitHub only after you name the people.
 when_to_use: Use when the user asks who should review a pull request, wants a reviewer suggested or assigned, or asks to request a review. Not for whether a pull request is risky (that is /cloudaeye:risk-score).
 argument-hint: "<PR number like #412>"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer"]
@@ -62,11 +62,52 @@ Do not call the tool until this gate reports `ready` or `initialized`.
 pull-request number, ask for one: who should review is a question about an open
 pull request on GitHub.
 
-1. **Recommend.** Call `assign_reviewer` with `repo=INIT.repo_full` and
-   `pr_number` (the digits, any `#` stripped). This call writes nothing anywhere.
-   If it returns `status: error`, report `error` and stop — an ineligible pull
-   request (closed, from a fork, over 50 files, not into the integrated branch)
-   is an answer, not something to work around.
+1. **Recommend.** Call `assign_reviewer` with `repo=INIT.repo_full`,
+   `pr_number` (the digits, any `#` stripped) and `require_owners=true`. This
+   call writes nothing anywhere.
+   - `status: error` — report `error` and stop. An ineligible pull request
+     (closed, from a fork, over 50 files, not into the integrated branch) is an
+     answer, not something to work around.
+   - `status: owners_missing` — the target branch has no `OWNERS.md`. Go to
+     **Ownership first** below, then come back to step 2.
+   - `status: ok` — go to step 2.
+
+   **Ownership first** (only on `owners_missing`). Ownership lives in the
+   repository, so what one person measures reaches everyone once it is merged.
+   Until then the files in this working tree stand in for it.
+
+   a. If the repository root in this working tree already has an `OWNERS.md`
+      (an earlier run, not merged yet), use it: skip to c.
+
+   b. Otherwise say one line — *`<target_branch>` has no OWNERS.md, so I'm
+      creating ownership at the repository root from git history first. This
+      runs on your machine and can take a few minutes.* — and run:
+
+```bash
+for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+[ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/create_owners.py"
+```
+
+      It writes the root's `OWNERS.md`, and one in each folder down to three
+      levels whose people differ. Report the files it wrote and their lead
+      contributors in a short table. If `needs_a_handle` is not empty, name
+      those people in one line and say `/cloudaeye:create-owners` asks for their
+      GitHub usernames; do not ask now. On `"status": "error"`, say so and use
+      `OWNERS = {}` in c, which gets a recommendation from git blame and
+      GitHub's suggestions without ownership.
+
+   c. Collect the files and ask again:
+
+```bash
+for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/create_owners.py" --collect
+```
+
+      Keep its `owners` object, exactly as printed, as `OWNERS`. Call
+      `assign_reviewer` with `repo`, `pr_number` and `owners=OWNERS` (no
+      `require_owners`), and handle the answer as in step 1. Pass the same
+      `OWNERS` again in step 4.
 
 2. **Print `card` verbatim.** It is rendered server-side: the recommended
    reviewer, what they are to this code and their queue, why (the first line is
@@ -93,7 +134,8 @@ pull request on GitHub.
 
 4. **Request.** Call `assign_reviewer` again with `repo`, `pr_number`,
    `apply=true`, `reviewers` = the exact logins (no `@`), and
-   `expected_head=head_sha`, `expected_base=base_sha` from step 1. Then read
+   `expected_head=head_sha`, `expected_base=base_sha` from step 1, plus
+   `owners=OWNERS` when **Ownership first** ran. Then read
    `assignment.status`:
 
    - `ok` — say who was asked; name anyone in `already_requested` or
@@ -106,15 +148,21 @@ pull request on GitHub.
    someone cannot review there, the CloudAEye GitHub App is not installed),
    report it and offer a fresh recommendation; never retry with other names.
 
-5. End with the link: `[<repo>#<pr_number>](<pr_url>)`.
+5. End with the link: `[<repo>#<pr_number>](<pr_url>)`. When **Ownership
+   first** ran, add one line: the `OWNERS.md` files are in the working tree, not
+   committed; commit them through a pull request, and once merged every
+   recommendation reads them from the repository. Never commit them yourself.
 
 ## Notes
 
 - The recommendation runs nothing: the risk score, AI slop and CloudAEye's review
   are read where they already ran on this commit. Do not run them yourself to
   fill a gap; the card names the command for each.
-- Ownership comes from `OWNERS.md` files on the target branch
-  (`/cloudaeye:create-owners` writes them). Without any, the recommendation
-  still works from git history and GitHub's own suggestions.
+- Ownership comes from `OWNERS.md` files on the target branch. When the branch
+  has none, the files in this working tree are used, and the card says they
+  are not merged yet. The branch's always win: once any `OWNERS.md` is merged,
+  local copies are ignored.
+- Create ownership only on `owners_missing`, never because this working tree
+  lacks a file: the branch may have them already.
 - If `assign_reviewer` is unavailable (MCP not connected), warn and stop — **do
   not pick a reviewer yourself from `git log` or `git blame`**.

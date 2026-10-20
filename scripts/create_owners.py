@@ -6,6 +6,11 @@ JSON object describing what it did (or, with --dry-run, would do).
 
     create_owners.py [PATH] [--depth N] [--dry-run] [--alias "Git Name=login" ...]
                      [--team NAME --team-lead LOGIN [--member LOGIN ...]]
+    create_owners.py --collect
+
+``--collect`` blames nothing and writes nothing: it prints every OWNERS.md in the
+working tree as ``{"owners": {path: text}}``, which /cloudaeye:assign-reviewer
+sends while the target branch has none of its own.
 
 The format and every rule are CloudAEye's OWNERS.md spec:
 
@@ -418,9 +423,33 @@ def run(args) -> dict:
     }
 
 
+#: The largest OWNERS.md --collect prints, and how many: what CloudAEye reads from a working tree.
+MAX_COLLECT_BYTES = 32_000
+MAX_COLLECT_FILES = 60
+
+
+def collect() -> dict:
+    """Every OWNERS.md in the working tree, tracked or not, root first: the files, not a measurement."""
+    root = git("rev-parse", "--show-toplevel").strip()
+    if not root:
+        raise Fail("not inside a git repository")
+    owners, skipped = {}, []
+    for folder in sorted(existing_owners(root, ""), key=lambda d: (d.count("/") if d else -1, d)):
+        rel = f"{folder}/{OWNERS}" if folder else OWNERS
+        text = (Path(root) / rel).read_text(encoding="utf-8", errors="replace")
+        if len(text.encode("utf-8")) > MAX_COLLECT_BYTES:
+            skipped.append({"path": rel, "reason": f"larger than {MAX_COLLECT_BYTES:,} bytes"})
+        elif len(owners) >= MAX_COLLECT_FILES:
+            skipped.append({"path": rel, "reason": f"past the first {MAX_COLLECT_FILES} files"})
+        else:
+            owners[rel] = text
+    return {"status": "ok", "repository": root, "owners": owners, "skipped": skipped}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("path", nargs="?", default="")
+    ap.add_argument("--collect", action="store_true", help="print the working tree's OWNERS.md files and stop")
     ap.add_argument("--depth", type=int, default=DEFAULT_DEPTH)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--alias", action="append", help='"Git Name=login": the GitHub handle for a git author')
@@ -428,6 +457,15 @@ def main() -> int:
     ap.add_argument("--team-lead", default="")
     ap.add_argument("--member", action="append")
     args = ap.parse_args()
+    if args.collect:
+        try:
+            out = collect()
+        except Fail as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}))
+            return 1
+        sys.stdout.reconfigure(encoding="utf-8")
+        print(json.dumps(out, indent=1))
+        return 0
     if args.team and not (args.team_lead or args.member):
         print(json.dumps({"status": "error", "error": "--team needs --team-lead or --member"}))
         return 1
