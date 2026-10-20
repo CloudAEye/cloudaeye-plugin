@@ -129,6 +129,12 @@ Each operational skill:
 
 The upload token is placed in a private temporary curl config, is not printed, and is deleted when the upload command exits. The `.cloudaeye/` scratch directory contains only gitignored session diff data. Previously stored credential files are neither read nor changed.
 
+Three commands differ:
+
+- `/cloudaeye:create-owners` calls nothing. It runs `git blame` on your machine and writes `OWNERS.md` files into the working tree.
+- `/cloudaeye:assign-reviewer` opens no session and uploads no diff: the server reads the pull request itself. When the target branch has no `OWNERS.md`, it runs `create-owners` at the root first and sends the text of the working tree's `OWNERS.md` files — GitHub usernames, shares and teams, never an email address — with the request, until they are merged.
+- Pull-request commands (`#412`) upload nothing: the server fetches the diff.
+
 OAuth requires an interactive MCP client, so unattended CI and service-account support is outside this release.
 
 ## Troubleshooting
@@ -149,6 +155,8 @@ OAuth requires an interactive MCP client, so unattended CI and service-account s
 .claude-plugin/plugin.json   plugin manifest
 .mcp.json                    OAuth MCP server registration
 skills/<verb>/SKILL.md       commands, including local help
+scripts/repository_preflight.py   the initialization gate's local repository detection
+scripts/create_owners.py     OWNERS.md from git blame (create-owners, and assign-reviewer's ownership first)
 ```
 
 When adding a command, update the Commands table above and its skill's inputs
