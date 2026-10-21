@@ -1,6 +1,6 @@
 ---
 name: risk-score
-description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, a verdict, what needs attention and the week-by-week evidence; it names no reviewer, never edits code and finds no bugs in the change itself.
+description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, a verdict and the next step, what needs attention, and the author and the code it changes with only the trends that got worse; it names no reviewer, never edits code and finds no bugs in the change itself.
 when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Not for who should review it. Pull requests only — the history is the repository's, read on GitHub.
 argument-hint: "<PR number like #412> [days, 7-90, default 21]"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
@@ -86,24 +86,25 @@ from the repository on GitHub, and a working tree has none of them.
    CloudAEye when the bug is filed, fixed or reopened, and the assessment only
    reads those notes.
 
-3. Print `result.card` **verbatim**. Then one line, `Next:` followed by
-   `result.next_step` as given, and, when the card is not on the pull request
-   yet (no `posted`, or `posted.status` other than `ok`), *reply "post" to put
-   it on #<n>*. End with the link. Then stop.
+3. Print `result.card` **verbatim**. It already carries the next step, so do
+   not repeat it. When the card is not on the pull request yet (no `posted`, or
+   `posted.status` other than `ok`), add one line: *reply "post" to put it on
+   #<n>*. End with the link. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
-   it opens with the verdict (the score, this PR's AI slop and the
-   recommendation), then what needs attention, ranked, then the evidence week
-   by week; every concern names a file, an issue or a pull request, and what
-   could not be measured is listed rather than read as clean. Do not reorder it,
-   round it, or summarise it into prose.
+   it opens with the verdict (the score, this PR's AI slop, the recommendation
+   and the next step), then what needs attention, ranked, then the author and
+   the code it changes, one marked line a signal, with only the trends that got
+   worse; every concern names a file, an issue or a pull request, and what could
+   not be measured is marked ⚪ with the reason rather than read as clean. Do not
+   reorder it, round it, or summarise it into prose.
 
    | field | what to do with it |
    |---|---|
    | `verdict` | `review` — say *human review required* first; `approve` — *no extra review needed*. |
    | `score` | The risk score out of 100, as the card prints it. Never say how it is built (weights, points per row): the result does not carry them, on purpose. |
    | `band` | `low`, `medium` or `high`. **Empty means too little was measured to name one** — say that, never "low". |
-   | `next_step` | The one action to suggest, chosen by rule. Say it as given; do not add others. |
+   | `next_step` | The one action to suggest, chosen by rule, already on the card. If you mention it again, say it as given; do not add others. |
    | `slop` | This PR's AI slop score (`score`, `band`) and where it came from (`ran`: `ran` — reviewed for this card; `reused` — an earlier review or risk card at this commit, nothing paid twice). `measured: false` blocks automatic approval: say so. |
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
