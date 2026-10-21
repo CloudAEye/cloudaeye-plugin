@@ -20,7 +20,7 @@ Pre-commit code review, security scanning, AI-slop scoring, pull-request change 
 | `/cloudaeye:implement` | Turn selected review findings into a fix plan. Identifies what to change, where to change it, and the affected callers, related defects, and tests. |
 | `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a score out of 100 and its review band, with the findings behind them. |
 | `/cloudaeye:risk-score` | Decide whether an open PR needs a human reviewer, and why. Weighs the changed files' bug history, rework and ownership with the author's recent PRs and this PR's AI slop score, and posts the risk card on the PR when you agree. |
-| `/cloudaeye:assign-reviewer` | Recommend who should review an open PR, why, and what they should check. Uses code ownership and whoever wrote, reviewed or fixed the changed code, balanced against each person's review queue, and requests the review only after you name the people. With no `OWNERS.md` in the repository yet, it creates ownership at the root in your working tree first. |
+| `/cloudaeye:assign-reviewer` | Suggest who should review an open PR, why, their review queue, and what they should check. Uses code ownership and whoever wrote, reviewed or fixed the changed code, balanced against each person's queue; a note after the PR number ("hardik is away", "urgent, nobody busy") steers it. It only suggests, and requests a review only when you ask. With no `OWNERS.md` in the repository yet, it creates ownership at the root in your working tree first. |
 | `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code and the lead contributor, at the root and in sub-folders whose people differ, with a Teams section for people to fill in. Local only; never commits. |
 | `/cloudaeye:add-docs` | Generate docstrings for undocumented code in an open pull request and post them as review suggestions. Reports which suggestions were generated and which reached the PR. |
 | `/cloudaeye:add-tests` | Generate unit tests for uncovered code in an open pull request, including new test files where needed. Posts the tests as review suggestions for you to review and run. |
@@ -29,7 +29,7 @@ Pre-commit code review, security scanning, AI-slop scoring, pull-request change 
 
 The review commands report results and do not edit code. `/cloudaeye:implement` is the one that leads to edits, and even there the server only returns a plan — Claude applies it, and you re-run the review to confirm the fix landed.
 
-Seven commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow`, `/cloudaeye:review-arch` and `/cloudaeye:risk-score` can post their cards there when asked, `/cloudaeye:assign-reviewer` requests reviews only from the people you name, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
+Seven commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow`, `/cloudaeye:review-arch` and `/cloudaeye:risk-score` can post their cards there when asked, `/cloudaeye:assign-reviewer` requests reviews only when you ask, from the people you name, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
 
 ## Command help
 
@@ -66,7 +66,7 @@ Every review command runs in one of two modes: with no argument it reviews your 
 /cloudaeye:control-flow #412        before/after diagrams, and who in other repositories calls what changed
 /cloudaeye:review-arch #412         the system, the repository's layers, what the change crossed, and what to ask before merging
 /cloudaeye:risk-score #412          does it need a human reviewer, and why
-/cloudaeye:assign-reviewer #412     who should review it, why, and what to check; asks them when you say who
+/cloudaeye:assign-reviewer #412     who should review it, why, and what to check; add a note like "hardik is away"
 /cloudaeye:check-pr #412            the hygiene checklist — description, title, docs, tests, dependencies
 /cloudaeye:add-docs #412            docstrings, posted as suggestions on the pull request
 /cloudaeye:add-tests #412           unit tests, posted the same way
