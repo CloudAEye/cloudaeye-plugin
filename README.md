@@ -80,7 +80,7 @@ Full details of every command — what to pass, what comes back, and how to read
 ## Install
 
 ```text
-/plugin marketplace add CloudAEye/claude-plugin
+/plugin marketplace add CloudAEye/cloudaeye-plugin
 /plugin install cloudaeye
 ```
 
