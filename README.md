@@ -20,6 +20,7 @@ Pre-commit code review, security scanning, AI-slop scoring, pull-request change 
 | `/cloudaeye:implement` | Turn selected review findings into a fix plan. Identifies what to change, where to change it, and the affected callers, related defects, and tests. |
 | `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a score out of 100 and its review band, with the findings behind them. |
 | `/cloudaeye:risk-score` | Decide whether an open PR needs a human reviewer, and why. Weighs the changed files' bug history, rework and ownership with the author's recent PRs and this PR's AI slop score, and posts the risk card on the PR when you agree. |
+| `/cloudaeye:triage-prs` | Pick the pull request you should review next, across every connected repository, and say why. Each PR waiting on you gets a priority out of 100 from its tickets' urgency, what the changed code does and the OKRs it serves, its risk and how much depends on it; PRs waiting on their authors are listed apart. A note ("I have half an hour") steers it, and `repo` or `all` show a team's whole queue. Reads only. |
 | `/cloudaeye:assign-reviewer` | Suggest who should review an open PR, why, their review queue, and what they should check. Uses code ownership and whoever wrote, reviewed or fixed the changed code, balanced against each person's queue; a note after the PR number ("hardik is away", "urgent, nobody busy") steers it. It only suggests, and requests a review only when you ask. With no `OWNERS.md` in the repository yet, it creates ownership at the root in your working tree first. |
 | `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code and the lead contributor, at the root and in sub-folders whose people differ, with a Teams section for people to fill in. Local only; never commits. |
 | `/cloudaeye:add-docs` | Generate docstrings for undocumented code in an open pull request and post them as review suggestions. Reports which suggestions were generated and which reached the PR. |
@@ -67,6 +68,7 @@ Every review command runs in one of two modes: with no argument it reviews your 
 /cloudaeye:review-arch #412         the system, the repository's layers, what the change crossed, and what to ask before merging
 /cloudaeye:risk-score #412          does it need a human reviewer, and why
 /cloudaeye:assign-reviewer #412     who should review it, why, and what to check; add a note like "hardik is away"
+/cloudaeye:triage-prs               which PR to review next across every repository, and why; add a note like "I have half an hour"
 /cloudaeye:check-pr #412            the hygiene checklist — description, title, docs, tests, dependencies
 /cloudaeye:add-docs #412            docstrings, posted as suggestions on the pull request
 /cloudaeye:add-tests #412           unit tests, posted the same way
