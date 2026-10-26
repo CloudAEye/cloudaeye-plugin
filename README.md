@@ -1,99 +1,71 @@
 # CloudAEye for Claude Code
 
-Pre-commit code review, security scanning, AI-slop scoring, pull-request change risk, change descriptions, questions, task verification, pull-request hygiene checks, docstring and unit-test generation, issue explanation, tracking-issue creation, and fix planning for Claude Code.
+Code review, security checks and review intelligence in Claude Code — on your changes before you commit, or on an open pull request after you push.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `/cloudaeye:help` | List all available commands, or show how to use a specific command with its arguments, options, and examples. |
-| `/cloudaeye:init` | Set up the current repository for CloudAEye review. Detects its provider, remote URL, and base branch, prompts for a monitor branch, and opens integration setup when needed. |
-| `/cloudaeye:inspect` | Find bugs such as logic errors, missed edge cases, invalid inputs, concurrency problems, and broken code signatures. Returns an approval verdict and numbered findings with file locations and severity. |
-| `/cloudaeye:security` | Find security issues across application code, LLMs, AI agents, and MCP tools, including secrets leaked in changed lines. Use for changes involving authentication, untrusted input, cryptography, prompts, or tool definitions. |
-| `/cloudaeye:review` | Run all six report types in one comprehensive bug and security review. Use before opening a significant PR or when a large change needs more than the routine bug check. |
-| `/cloudaeye:describe` | Turn the pending change into a Markdown description and a list of important changes for a PR body or commit message. Uses repository context to explain the impact across files. |
-| `/cloudaeye:control-flow` | Draw sequence diagrams showing calls the change added, removed, redirected, or moved. Identifies affected callers in other connected repositories so you can see how the change alters execution flow. |
-| `/cloudaeye:review-arch` | Show how a change affects the system architecture, repository layers, and dependencies through three diagrams. Reports architecture findings, cross-repository impact, and questions for a senior review. |
-| `/cloudaeye:ask` | Answer questions about the pending change. Ask what else calls a function, how it behaved before, or where a similar pattern is used. |
-| `/cloudaeye:check-task` | Verify whether the pending change fulfills a Jira ticket, GitHub issue, or written specification. Returns a DONE, PARTIAL, or NOT DONE verdict with details of missing work. |
-| `/cloudaeye:check-pr` | Check an open PR's docstring and test coverage, README freshness, dependencies, title and description, duplicate code, and secrets. Runs the repository's configured checklist and posts the detailed report on the PR. |
-| `/cloudaeye:implement` | Turn selected review findings into a fix plan. Identifies what to change, where to change it, and the affected callers, related defects, and tests. |
-| `/cloudaeye:slop-score` | Assess how much manual review a change needs by checking nine code quality signals, including duplication, nonexistent APIs, dead code, missing tests, and overengineering. Returns a score out of 100 and its review band, with the findings behind them. |
-| `/cloudaeye:risk-score` | Decide whether an open PR needs a human reviewer, and why. Weighs the changed files' bug history, rework and ownership with the author's recent PRs and this PR's AI slop score, and posts the risk card on the PR when you agree. |
-| `/cloudaeye:triage-prs` | Pick the pull request you should review next, across every connected repository, and say why. Each PR waiting on you gets a priority out of 100 from its tickets' urgency, what the changed code does and the OKRs it serves, its risk and how much depends on it; PRs waiting on their authors are listed apart. A note ("I have half an hour") steers it, and `repo` or `all` show a team's whole queue. Reads only. |
-| `/cloudaeye:assign-reviewer` | Suggest who should review an open PR, why, their review queue, and what they should check. Uses code ownership and whoever wrote, reviewed or fixed the changed code, balanced against each person's queue; a note after the PR number ("hardik is away", "urgent, nobody busy") steers it. It only suggests, and requests a review only when you ask. With no `OWNERS.md` in the repository yet, it creates ownership at the root in your working tree first. |
-| `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code and the lead contributor, at the root and in sub-folders whose people differ, with a Teams section for people to fill in. Local only; never commits. |
-| `/cloudaeye:add-docs` | Generate docstrings for undocumented code in an open pull request and post them as review suggestions. Reports which suggestions were generated and which reached the PR. |
-| `/cloudaeye:add-tests` | Generate unit tests for uncovered code in an open pull request, including new test files where needed. Posts the tests as review suggestions for you to review and run. |
-| `/cloudaeye:explain` | Explain a Jira or GitHub issue using the code it touches. Describes the relevant components, their current behavior, and surrounding code so you can understand the work before implementing it. |
-| `/cloudaeye:create-issue` | Turn selected findings from the last review into Jira tickets or GitHub issues, with an optional assignee and note. Returns ticket links and identifies findings already tracked in the same session. |
+| `/cloudaeye:help` | List the commands, or show how to use one with its arguments, options and examples. |
+| `/cloudaeye:init` | Connect the current repository to CloudAEye and choose the branch it is compared against. |
+| `/cloudaeye:inspect` | Find bugs: logic errors, missed edge cases, invalid input, concurrency problems, broken signatures. Returns a verdict and numbered findings. |
+| `/cloudaeye:security` | Find security issues in application code, LLMs, AI agents and MCP tools, including secrets in changed lines. |
+| `/cloudaeye:review` | Bugs and security in one full review, before a significant pull request. |
+| `/cloudaeye:describe` | Describe the change for a PR body or commit message. |
+| `/cloudaeye:control-flow` | Before/after sequence diagrams of the calls the change added, removed or moved, and who in other repositories calls them. |
+| `/cloudaeye:review-arch` | What the change does to the architecture: services, layers and dependencies, with findings and questions for a senior review. |
+| `/cloudaeye:ask` | Ask about the change: what calls this, how it behaved before, where a pattern is used. |
+| `/cloudaeye:check-task` | Check the change against a Jira ticket, GitHub issue or written spec: DONE or NOT DONE, with what is missing. |
+| `/cloudaeye:check-pr` | Run the repository's PR checklist on an open PR and post the report there. |
+| `/cloudaeye:implement` | Turn review findings into a fix plan: what to change, where, and what else it affects. |
+| `/cloudaeye:slop-score` | How much careful reading a change needs: a score out of 100 from nine code-quality signals, with the findings. |
+| `/cloudaeye:risk-score` | Whether an open PR needs a human reviewer, and why, from its files' history, its author's recent PRs and its AI slop. |
+| `/cloudaeye:triage-prs` | Which PR to review next across every connected repository, and why. A note like "I have half an hour" steers it. Reads only. |
+| `/cloudaeye:assign-reviewer` | Who should review an open PR, why, and what they should check. A note like "Tom is away" steers it; a review is requested only when you ask. |
+| `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
+| `/cloudaeye:add-docs` | Generate docstrings for an open PR and post them as review suggestions. |
+| `/cloudaeye:add-tests` | Generate unit tests for an open PR and post them as review suggestions. |
+| `/cloudaeye:explain` | Explain a Jira or GitHub issue using the code it touches. |
+| `/cloudaeye:create-issue` | File review findings as Jira tickets or GitHub issues. |
 
-The review commands report results and do not edit code. `/cloudaeye:implement` is the one that leads to edits, and even there the server only returns a plan — Claude applies it, and you re-run the review to confirm the fix landed.
+None of them edits your code. `/cloudaeye:implement` returns a plan, and Claude applies it.
 
-Seven commands require confirmation before their external writes: `/cloudaeye:add-docs` and `/cloudaeye:add-tests` post suggestions on a pull request, `/cloudaeye:control-flow`, `/cloudaeye:review-arch` and `/cloudaeye:risk-score` can post their cards there when asked, `/cloudaeye:assign-reviewer` requests reviews only when you ask, from the people you name, and `/cloudaeye:create-issue` opens real tickets. Separately, `/cloudaeye:check-pr` posts its detailed report to the PR, and `/cloudaeye:explain` can also leave a comment on the issue.
+**What writes outside your machine:** `check-pr` posts its report on the pull request; `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card only when you ask; `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue.
 
-## Command help
-
-Run `/cloudaeye:help` to print the complete command table above, or
-`/cloudaeye:help inspect` for a manual covering syntax, all supported arguments
-and options, defaults, examples, output, and limitations. Full names such as
-`/cloudaeye:help /cloudaeye:inspect` work too. Unknown names return the catalog
-without running anything.
-
-Help reads this README and the installed command's skill locally. It requires
-no Git repository, authentication, network access, or running MCP server.
+`/cloudaeye:help inspect` prints one command's full manual. It works offline, with no sign-in.
 
 ## Typical workflows
 
-Every review command runs in one of two modes: with no argument it reviews your **uncommitted changes**, and with a pull-request number (`#412`) it reviews that **open pull request** — the server fetches the diff itself, so nothing is uploaded from your machine. The same command, the same output, two points in the cycle.
+With no argument a command reviews your **uncommitted changes**; with a pull-request number (`#412`) it reviews that **open pull request**.
 
 ### Before you commit
 
 ```text
-/cloudaeye:inspect                  after each task — the cheap bug pass; security is its own pass
+/cloudaeye:inspect                  after each task — the quick bug pass
 /cloudaeye:implement [1,3]          plan fixes for findings 1 and 3; Claude applies them
-/cloudaeye:inspect                  again, to confirm the fixes landed
-/cloudaeye:check-task BETA-5225     does the change do what the ticket asked?
+/cloudaeye:check-task PROJ-123      does the change do what the ticket asked?
 /cloudaeye:review                   bugs and security in one pass, before opening the PR
 /cloudaeye:describe                 the PR body
 ```
-
-`/cloudaeye:control-flow` shows what the change did to the order of calls, `/cloudaeye:review-arch` what it did to the layers and the boundaries between them, and `/cloudaeye:slop-score` how much careful reading it needs — all useful before a PR on a change you did not write line by line.
-
-### Reviewer model options
-
-`review`, `inspect`, and `security` accept `--model MODEL`,
-`--model-provider PROVIDER`, and `--invert-model true|false` for this run only:
-
-```text
-/cloudaeye:review --invert-model false
-/cloudaeye:inspect src/auth/ --high --model gpt
-/cloudaeye:security --model-provider azure --model <model-id>
-```
-
-Omitted options use the tenant's saved settings. In Claude Code, enabled
-inversion selects the configured GPT reviewer; an explicit model or provider
-takes precedence. The server validates availability and credentials rather
-than silently switching models. These options do not update saved configuration.
 
 ### After you push
 
 ```text
 /cloudaeye:review #412              the full review, on the pull request
-/cloudaeye:control-flow #412        before/after diagrams, and who in other repositories calls what changed
-/cloudaeye:review-arch #412         the system, the repository's layers, what the change crossed, and what to ask before merging
 /cloudaeye:risk-score #412          does it need a human reviewer, and why
-/cloudaeye:assign-reviewer #412     who should review it, why, and what to check; add a note like "hardik is away"
-/cloudaeye:triage-prs               which PR to review next across every repository, and why; add a note like "I have half an hour"
-/cloudaeye:check-pr #412            the hygiene checklist — description, title, docs, tests, dependencies
-/cloudaeye:add-docs #412            docstrings, posted as suggestions on the pull request
-/cloudaeye:add-tests #412           unit tests, posted the same way
-/cloudaeye:create-issue [2] jira    file finding 2 as a Jira ticket (or `github`), optionally with an assignee
+/cloudaeye:assign-reviewer #412     who should review it; add a note like "Tom is away"
+/cloudaeye:triage-prs               which PR to review next, and why
+/cloudaeye:check-pr #412            the hygiene checklist
+/cloudaeye:add-docs #412            docstrings, posted as suggestions
 ```
 
-The pull request must be open, merge into your integrated branch, not come from a fork, and change at most 50 files. `/cloudaeye:implement` does not run on a pull request: its plans describe edits to a working tree.
+The pull request must be open, merge into your integrated branch, not come from a fork, and change at most 50 files.
 
-Full details of every command — what to pass, what comes back, and how to read it — are in the [User Guide](https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html).
+### Reviewer model options
+
+`review`, `inspect` and `security` take `--model`, `--model-provider` and `--invert-model true|false` for one run, e.g. `/cloudaeye:inspect --model gpt`. Omitted options use your organisation's saved settings.
+
+Every command in full: the [User Guide](https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html).
 
 ## Install
 
@@ -102,111 +74,57 @@ Full details of every command — what to pass, what comes back, and how to read
 /plugin install cloudaeye
 ```
 
-Restart Claude Code so the MCP server connects. If you previously installed the skills manually, remove those copies to avoid loading stale commands.
+Restart Claude Code so the MCP server connects.
 
-## Cursor
-
-The Cursor plugin reuses the same skills and bundled scripts. Its
-`cursor/mcp.json` connects to `https://api.cloudaeye.com/mcp` through the pinned
-`mcp-remote` OAuth bridge. Node.js and npm/npx are required for the bridge;
-shared skills also require Git, Python, Bash, and curl. On Windows, use an
-available Bash environment such as Git Bash. The first launch downloads the
-bridge. No API key or client secret is bundled.
-
-Use Cursor's [plugin installation flow](https://cursor.com/docs/plugins),
-then enable CloudAEye and authenticate its MCP connection. Select skills from
-the `/` menu and disable any duplicate standalone CloudAEye connection.
-No platform-specific installer is needed; Claude's `.mcp.json` is unchanged.
-
-For self-hosting, replace the URL in `cursor/mcp.json` with your HTTPS,
-OAuth-enabled endpoint before installing.
+**Cursor:** install through Cursor's [plugin flow](https://cursor.com/docs/plugins) and authenticate the CloudAEye MCP connection. It needs Node.js for the `mcp-remote` bridge, plus Git, Python, Bash and curl (Git Bash on Windows).
 
 ## Authenticate
 
 1. Run `/mcp` in Claude Code.
 2. Select CloudAEye and choose **Authenticate**.
-3. Complete sign-in, organisation selection, and consent in the browser.
-4. Run any `/cloudaeye:*` command in a Git repository with pending changes.
+3. Complete sign-in in the browser.
 
-Claude Code stores and refreshes the OAuth credentials.
+Claude Code stores and refreshes the credentials.
 
 ## Update
-
-Every release bumps the `version` in [plugin.json](.claude-plugin/plugin.json); Claude Code only offers an update when it sees a newer one.
-
-**Nothing prompts you by default.** Claude Code turns auto-update off for every marketplace that is not Anthropic's own, so a new CloudAEye release waits until you ask for it:
 
 ```text
 claude plugin update cloudaeye@cloudaeye
 ```
 
-Then run `/reload-plugins` in a terminal session, or start a new session. In the desktop app the plugin's MCP server — where the review tools live — reconnects only in a new session, so start one there; a release usually changes what that server offers, and a stale connection keeps the old tool list.
+Then start a new session (or run `/reload-plugins` in a terminal). Auto-update is off by default for marketplaces other than Anthropic's; turn it on under `/plugin` → **Marketplaces** → `cloudaeye`. Updating does not sign you out. `claude plugin list` shows your version.
 
-**To be prompted instead**, turn auto-update on for the CloudAEye marketplace once: `/plugin` → **Marketplaces** → `cloudaeye` → **Enable auto-update**. Claude Code then checks after each session starts, with a random delay of up to ten minutes, and when it has fetched a newer version shows a notification asking you to run `/reload-plugins`. If you ignore it, the new version loads on your next launch. The desktop app has no `/plugin` panel; use the command above there.
+## Self-hosted server
 
-**Updating does not sign you out.** Credentials are stored against the server URL, and an update never changes it. If `/mcp` shows **Needs authentication** after an update, a token could not be refreshed — run **Authenticate** as above. Nothing about the update itself requires it.
+Set `CLOUDAEYE_URL` to your OAuth-enabled MCP endpoint before starting Claude Code; in Cursor, change the URL in `cursor/mcp.json`. The default is `https://api.cloudaeye.com/mcp`.
 
-`claude plugin list` shows the version you have.
+## What leaves your machine
 
-## Self-hosted Server
+- Commands on your changes upload a `git diff` (new files included). A gitignored `.cloudaeye/` folder holds the session's diff, and the upload token stays in a private temporary file.
+- Pull-request commands (`#412`), `triage-prs` and `assign-reviewer` upload no code: CloudAEye reads GitHub itself.
+- `create-owners` runs locally and sends nothing.
 
-The plugin uses `https://api.cloudaeye.com/mcp` by default. Set `CLOUDAEYE_URL` before starting Claude Code to use a self-hosted OAuth-enabled MCP endpoint.
-
-## Data Flow
-
-Each session-based review skill:
-
-1. Detects the provider, repository URL, current branch, and base branch.
-2. Calls the session-free `initialize_repository` tool; it opens setup only when the provider is not connected.
-3. Calls the OAuth-authenticated `start_session` tool after initialization.
-4. Builds and uploads the diff with `git diff` after `git add --intent-to-add .` so untracked files are included.
-5. Calls the requested MCP review tool with the returned session ID.
-6. For queued responses, keeps the `job_id` and polls `get_job_result` every
-   30 seconds, then reads the original tool response under `result`. Never
-   re-submits analysis to check progress. Direct responses remain supported.
-
-Queued tools include `inspect_diff`, `describe_change`, `ask`, `implement`,
-`check_task`, `review_arch`, `control_flow`, `slop_score`, `change_risk`, and
-`explain`. `create_issue`, `assign_reviewer` and `triage_prs` answer directly,
-without polling.
-Wait for a review before planning fixes or filing its findings; do not overlap
-review/fix workflows on one session. Failed or expired results are not clean
-verdicts, and uncertain ticket/comment delivery must not be retried automatically.
-
-The upload token is placed in a private temporary curl config, is not printed, and is deleted when the upload command exits. The `.cloudaeye/` scratch directory contains only gitignored session diff data. Previously stored credential files are neither read nor changed.
-
-Four commands differ:
-
-- `/cloudaeye:create-owners` calls nothing. It runs `git blame` on your machine and writes `OWNERS.md` files into the working tree.
-- `/cloudaeye:triage-prs` opens no session and uploads nothing: the server reads the open pull requests of every connected repository itself. It sends your GitHub username when `gh` or your git email shows it, a note in your own words, and an OKR document's text when you name one, never stored.
-- `/cloudaeye:assign-reviewer` opens no session and uploads no diff: the server reads the pull request itself. When the target branch has no `OWNERS.md`, it runs `create-owners` at the root first and sends the text of the working tree's `OWNERS.md` files — GitHub usernames, shares and teams, never an email address — with the request, until they are merged.
-- Pull-request commands (`#412`) upload nothing: the server fetches the diff.
-
-OAuth requires an interactive MCP client, so unattended CI and service-account support is outside this release.
+Sign-in needs an interactive client, so unattended CI is not supported yet.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| CloudAEye shows **Needs authentication** | Open `/mcp` and complete **Authenticate** |
-| A skill says `start_session` is unavailable | Restart Claude Code so the updated MCP tools load |
-| A command from the docs is missing, or its tool is reported unavailable | Your plugin is behind: `claude plugin update cloudaeye@cloudaeye`, then a new session — see [Update](#update) |
-| `upload_http=401` | The upload grant is missing, invalid, or belongs to another session |
-| `upload_http=000` | Check network access and the configured review server URL |
-| `cloudaeye_error=insecure_url` | Use HTTPS, except for localhost development |
-| `base_source=head` | Connect the repository integration to enable the configured target branch |
+| CloudAEye shows **Needs authentication** | Open `/mcp` and choose **Authenticate** |
+| A command or its tool is missing | Update the plugin, then start a new session — see [Update](#update) |
+| `upload_http=401` | The upload grant is missing or belongs to another session |
+| `upload_http=000` | Check network access and the server URL |
+| `cloudaeye_error=insecure_url` | Use HTTPS, except for localhost |
+| `base_source=head` | Connect the repository integration so the configured branch is used |
 
 ## Layout
 
 ```text
-.claude-plugin/plugin.json   plugin manifest
-.mcp.json                    OAuth MCP server registration
-skills/<verb>/SKILL.md       commands, including local help
-scripts/repository_preflight.py   the initialization gate's local repository detection
-scripts/create_owners.py     OWNERS.md from git blame (create-owners, and assign-reviewer's ownership first)
+.claude-plugin/plugin.json        plugin manifest
+.cursor-plugin/, cursor/          the Cursor plugin
+.mcp.json                         MCP server registration
+skills/<verb>/SKILL.md            the commands, including help
+scripts/                          local helpers: repository detection, OWNERS.md from git blame
 ```
 
-When adding a command, update the Commands table above and its skill's inputs
-and behavior: help reads these as its reference. Also update the documentation
-repository's `docs/user-guide/mcp/skills.md`, `usage-guide.md`, and
-`docs/user-guide/code-review/self-hosting/mcp.md` so every command is discoverable.
+Adding a command: add it to the Commands table above (help reads it), and to the documentation's Skills & Commands and User Guide pages.

@@ -103,7 +103,7 @@ Do not proceed until this gate reports `ready` or `initialized`.
 
    - `jira <KEY-or-id>` — pass `issue` as the key or id, `source` as `jira`.
    - `github <number>` — pass `issue` as the number, `source` as `github`.
-   - A bare URL, or a bare Jira key like `BETA-5225` — pass it as `issue` and
+   - A bare URL, or a bare Jira key like `PROJ-123` — pass it as `issue` and
      leave `source` empty. The server works it out.
    - **A bare number with no word in front is ambiguous** — Jira takes a numeric
      id too. Ask which tracker rather than assuming; the server will refuse it

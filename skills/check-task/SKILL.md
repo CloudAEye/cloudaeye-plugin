@@ -1,7 +1,7 @@
 ---
 name: check-task
 description: Check whether the uncommitted changes in this repo actually do what the task asked. Takes a GitHub issue URL, Jira ticket IDs, a mixed reference list, or freeform task text, and returns a DONE / NOT DONE verdict with a per-requirement checklist and the gaps.
-when_to_use: Use before marking work complete, or when the user asks whether the change satisfies an issue, a ticket, or the request they made. Accepts an issue URL, IDs like BETA-5225, a list of both, or plain text.
+when_to_use: Use before marking work complete, or when the user asks whether the change satisfies an issue, a ticket, or the request they made. Accepts an issue URL, IDs like PROJ-123, a list of both, or plain text.
 argument-hint: "[issue URL | TICKET-123 | task description]"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
@@ -31,9 +31,9 @@ on the same session; a pending job does not cover new code.
 
 The skill accepts an optional task spec as its invocation argument. When present, use it as the task input and **do not re-prompt** the user (still confirm before reusing a `prior_task`). Recognised forms:
 
-- **Jira ticket IDs** — a bracketed or bare comma list of `PROJECT-NUMBER` keys, e.g. `/cloudaeye:check-task [BETA-5225, BETA-5223]` or `/cloudaeye:check-task BETA-5225`. Detect with `\b[A-Z][A-Z0-9]+-\d+\b`. Route to `task_source="jira"`.
-- **GitHub issue URL** — `https://github.com/<owner>/<repo>/issues/<n>`. Route to `task_source="github-issue"`. Short refs (`#42`, `owner/repo#42`) and mixed Jira+GitHub lists (`[BETA-5225, #42]`) also resolve server-side.
-- **Freeform text** — anything else. Route to `task_source="user-text"` (or `jira`/`spec` if the text is clearly that). Text that merely *mentions* tickets ("verify BETA-5225 is handled, keep retries intact") is fine as-is — a server-side triage model extracts the references and keeps the extra requirements; don't restructure it.
+- **Jira ticket IDs** — a bracketed or bare comma list of `PROJECT-NUMBER` keys, e.g. `/cloudaeye:check-task [PROJ-123, PROJ-124]` or `/cloudaeye:check-task PROJ-123`. Detect with `\b[A-Z][A-Z0-9]+-\d+\b`. Route to `task_source="jira"`.
+- **GitHub issue URL** — `https://github.com/<owner>/<repo>/issues/<n>`. Route to `task_source="github-issue"`. Short refs (`#42`, `owner/repo#42`) and mixed Jira+GitHub lists (`[PROJ-123, #42]`) also resolve server-side.
+- **Freeform text** — anything else. Route to `task_source="user-text"` (or `jira`/`spec` if the text is clearly that). Text that merely *mentions* tickets ("verify PROJ-123 is handled, keep retries intact") is fine as-is — a server-side triage model extracts the references and keeps the extra requirements; don't restructure it.
 
 With no argument, fall back to asking the user (step 2).
 
@@ -159,7 +159,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
    - **Else if step 1 printed a non-empty `prior_task`** (a `check_task` ran against this review session before, no commit since), offer to reuse it: show `prior_task.task_description` (truncated) and ask "verify against this same task again, or a new one?" Don't silently reuse — confirm first.
    - **Otherwise ask the user** for one of:
      - a **GitHub issue URL** (`https://github.com/<owner>/<repo>/issues/<n>`) → set `task_source="github-issue"` and pass the URL verbatim as `task_description`. The server re-fetches title + body + comments on every call, so new collaborator comments flow through automatically — never paste the issue body yourself when a URL is available.
-     - **Jira ticket IDs** (`[BETA-5225, BETA-5223]`) → set `task_source="jira"` and pass the comma-separated keys (brackets stripped, e.g. `BETA-5225, BETA-5223`) as `task_description`. Each ticket is fetched server-side (summary + description, re-pulled every call).
+     - **Jira ticket IDs** (`[PROJ-123, PROJ-124]`) → set `task_source="jira"` and pass the comma-separated keys (brackets stripped, e.g. `PROJ-123, PROJ-124`) as `task_description`. Each ticket is fetched server-side (summary + description, re-pulled every call).
      - **freeform task text** (a spec excerpt or plain description) → pass it verbatim as `task_description` and set `task_source` to `spec` or `user-text`.
    - Do not summarise or paraphrase the task. The server extracts requirements from the exact text.
 3. Write a one-paragraph `intent` describing **the code change you just made in this round of edits** — used by the verifier as a focus signal (it still verifies every claim against the actual diff).
