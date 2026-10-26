@@ -2,9 +2,30 @@
 name: review
 description: Full CloudAEye review — bugs and security in one pass — of the uncommitted changes in this repo, of just one file or directory of them, or of an open pull request given its number. Reports findings with file, line and severity, grouped by kind; it never edits code on its own. The widest and most expensive of the CloudAEye passes.
 when_to_use: Use before opening a significant PR, when the user asks for a full, complete or thorough review, when they name a path to review ("/cloudaeye:review src/auth/"), or when they name a pull request ("/cloudaeye:review #405", "review PR 12"). For the routine check after finishing a task use /cloudaeye:inspect; for the security surface alone use /cloudaeye:security.
-argument-hint: "[optional: a path, a PR number like #405, and/or --critical]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff"]
+argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
 
 ## When to run
 
@@ -14,7 +35,7 @@ It costs more than either alone — every enabled category rides in the per-file
 
 ## Three modes
 
-The argument decides which. Read it before anything else:
+Parse the model options and severity flags below first. Decide the mode only from the remaining path or PR argument:
 
 | Argument | Mode |
 |---|---|
@@ -24,6 +45,31 @@ The argument decides which. Read it before anything else:
 | `--critical` `--high` `--medium` `--low` | Combine with any mode above — reports that level **and higher**. |
 
 Digits mean a pull request. If the user really means a directory named `405`, they write `./405` and you treat it as a path.
+
+### Model options
+
+These options apply only to this invocation; they never change saved settings.
+
+| Flag | `inspect_diff` argument | Value |
+|---|---|---|
+| `--model` | `review_model` | Model family (for example, `gpt`) or exact model ID. |
+| `--model-provider` | `model_provider` | Hosting provider (for example, `azure`). |
+| `--invert-model` | `invert_model` | Boolean `true` or `false`, never a string. |
+
+Omit every option the user did not supply. In particular, omitted `invert_model`
+uses the tenant's saved inversion setting, not a client-side default. When
+inversion is enabled, this Claude Code flow uses the configured GPT reviewer.
+An explicit model or provider takes precedence over inversion. Pass all supplied
+options to the server; it resolves supported models, providers, and credentials.
+Reject missing values, unknown flags, or an inversion value other than `true`
+or `false` before initializing a session. Report server selection errors and
+stop; do not retry with a different model or silently drop an option.
+
+```text
+/cloudaeye:review --invert-model false
+/cloudaeye:review src/auth/ --high --model gpt
+/cloudaeye:review --model-provider azure
+```
 
 ### Path mode
 
@@ -211,6 +257,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
    - `intent`: the summary from step 2
    - `profile`: `"review"` — **always this value from this skill.** It selects every valid prompt: the bug categories and the full security surface.
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Omit it entirely otherwise; do not default to a floor the user did not ask for.
+   - `review_model`, `model_provider`, `invert_model`: only when explicitly supplied, using the mappings in **Model options** above. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title` / `pr_description`. Do not pass `review_config` or `report_types`; either one overrides the profile and narrows the review you were asked to run.
 
    Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff`; it is pre-approved in this skill's frontmatter.
@@ -238,7 +285,7 @@ Duplicate-code detection is not part of any profile here — it needs the vector
 
 ## Notes
 
-- **Single-shot** — one call, report the output, done. No fix-and-retry loop inside the skill.
+- Submit analysis once, resolve its response using **Queued Result**, report the output, then stop. No fix-and-retry loop inside the skill.
 - Expect more findings, and more low-severity ones, than `/cloudaeye:inspect`. Present them by severity within each report type so the user can triage rather than wade.
 - **Working-tree mode is pre-commit:** the diff is always `git diff` (working tree vs `HEAD`). Committing moves `HEAD`, but the review session persists — its recorded `head` is refreshed on the next call, and prior intent carries across.
 - **A pull-request review is its own session,** separate from the working-tree one for the same repository, so it can never overwrite unfinished local work. Re-running `/cloudaeye:review #5` resumes that PR's session; if the PR has new commits the server re-fetches, and if it does not, nothing is re-derived.

@@ -3,8 +3,30 @@ name: slop-score
 description: Score the uncommitted changes in this repo — or one path of them, or an open pull request — for AI-slop signals, and report how much review the change needs, with the evidence behind it. Nine weighted signals — duplicate code, hallucinated APIs, dead code, missing tests, complexity, generic naming, boilerplate comments, overengineering, style inconsistency — plus the shape of the change. Reports a score out of 100, its review band and a card; it never edits code.
 when_to_use: Use when the user asks how much slop is in a change, whether it looks AI-generated, whether it needs a careful manual read before merge, or asks for a slop score. Also useful on a large change whose per-file review came back clean but whose size does not look earned.
 argument-hint: "[optional: a path, or a PR number like #5]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__slop_score", "mcp__cloudaeye__slop_score"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__slop_score", "mcp__cloudaeye__slop_score", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
+
 
 ## What this is
 
@@ -183,7 +205,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
    **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
-2. Call CloudAEye's `slop_score` MCP tool with:
+2. Call CloudAEye's `slop_score` MCP tool **once** with:
    - `session_id`: the `session_id` printed by step 1
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed score that does not say so is the one result that misleads. Omit it otherwise.
 
@@ -193,11 +215,16 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
    The tool runs the `slop` review profile first so the signals have something to read, then does the arithmetic. Anything a previous `/cloudaeye:review` or `/cloudaeye:inspect` already computed **on this same diff** is reused rather than paid for again, so the second scoring of an unchanged change is nearly free. You do **not** need to read the changed files yourself — the server has them staged.
 
-3. Report the response to the user:
+3. Resolve the response using **Queued Result** above, including its
+   synchronous rollout fallback and bounded polling deadline. Keep the same
+   job ID throughout; never call `slop_score` again to check progress. Do not
+   continue below until a usable original response has been obtained.
+
+4. Report the inner `result` to the user:
 
    - **First: a `degraded` block.** The review underneath ran with no post-edit source staged, so every signal read an empty file. **Report it as a failed run and stop — do not present the card, and never call it a low score.** The server does not cache a degraded run, so re-running once the cause is fixed gives a real answer.
 
-   - **Print `card` verbatim, inside a fenced code block.** Do not reformat it, do not turn it into a table, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, the header says when not every signal could be measured, and a partially built signal says so on its own row. Every one of those is lost the moment the card is retyped.
+   - **Print the resolved response's `card` verbatim, inside a fenced code block.** Do not reformat it, do not turn it into a table, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, the header says when not every signal could be measured, and a partially built signal says so on its own row. Every one of those is lost the moment the card is retyped.
 
    - **`band_source: "judged"`, when present.** The arithmetic's band was moved one step after a model weighed the evidence — `band_reason` says why and `arithmetic_band` is what it moved from. The card already prints all three; do not drop them when summarising, and do not present the judged band as if the arithmetic produced it. When the field is absent the band is the arithmetic's and there is nothing to explain.
 
@@ -217,11 +244,15 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 ## Notes
 
+- Finish the current job before dependent planning/ticket actions. Do not
+  overlap review, editing, or re-inspection workflows on the same session;
+  dependent tools read the completed session report, not a pending job.
+
 - **The score is arithmetic; only the band is judged.** Every point traces to a finding with a file and a line, which is why the card can be argued with. If the user disputes a row, look at the evidence under it rather than defending the row. The one model judgment is the band, it can move by one step at most, and its reason is printed — so that is also arguable rather than an oracle.
 - **A low score is not an approval.** These nine signals are about the shape of a change, not its correctness — a change can be perfectly clean here and still be wrong. For bugs run `/cloudaeye:inspect`, and for the security surface `/cloudaeye:security`. Say this when the user reads a low score as "good to merge".
 - **Volume is context, not a signal.** The headline reports lines, files and how many changed functions carry a real behavioural edit. "1,200 lines, 65 files, two behavioural changes" is the shape the whole feature exists to make visible, and it contributes no points on purpose — a big change is not a bad one.
 - **Commit shape is reported absent, never clean.** A session carries no commit list, so the "one enormous commit, generic message" signal cannot be measured here and says so rather than passing.
 - **Generated and vendored files are excluded**, and the exclusion is reported. Lockfiles and generated output are the reason a "1,200 lines changed" headline is usually wrong.
 - **A scored run saves its report,** so `/cloudaeye:implement` works on the findings straight afterwards, and a later `/cloudaeye:review` on the same diff reuses the stages this run paid for.
-- This is a **single-shot** skill — one call, report the output, done. No fix-and-retry loop inside the skill.
+- This is a **single-enqueue** skill: call the analysis tool once, poll that job, report its output, done. No re-enqueue or fix-and-retry loop inside the skill.
 - If `slop_score` is unavailable (MCP not connected), warn the user and skip.

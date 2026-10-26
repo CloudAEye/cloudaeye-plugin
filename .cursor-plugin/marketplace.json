@@ -1,0 +1,14 @@
+{
+  "name": "cloudaeye",
+  "owner": {
+    "name": "CloudAEye",
+    "email": "support@cloudaeye.com"
+  },
+  "plugins": [
+    {
+      "name": "cloudaeye",
+      "source": "./",
+      "description": "CloudAEye reviews and developer workflows for Cursor."
+    }
+  ]
+}

@@ -60,6 +60,22 @@ Every review command runs in one of two modes: with no argument it reviews your 
 
 `/cloudaeye:control-flow` shows what the change did to the order of calls, `/cloudaeye:review-arch` what it did to the layers and the boundaries between them, and `/cloudaeye:slop-score` how much careful reading it needs — all useful before a PR on a change you did not write line by line.
 
+### Reviewer model options
+
+`review`, `inspect`, and `security` accept `--model MODEL`,
+`--model-provider PROVIDER`, and `--invert-model true|false` for this run only:
+
+```text
+/cloudaeye:review --invert-model false
+/cloudaeye:inspect src/auth/ --high --model gpt
+/cloudaeye:security --model-provider azure --model <model-id>
+```
+
+Omitted options use the tenant's saved settings. In Claude Code, enabled
+inversion selects the configured GPT reviewer; an explicit model or provider
+takes precedence. The server validates availability and credentials rather
+than silently switching models. These options do not update saved configuration.
+
 ### After you push
 
 ```text
@@ -87,6 +103,23 @@ Full details of every command — what to pass, what comes back, and how to read
 ```
 
 Restart Claude Code so the MCP server connects. If you previously installed the skills manually, remove those copies to avoid loading stale commands.
+
+## Cursor
+
+The Cursor plugin reuses the same skills and bundled scripts. Its
+`cursor/mcp.json` connects to `https://api.cloudaeye.com/mcp` through the pinned
+`mcp-remote` OAuth bridge. Node.js and npm/npx are required for the bridge;
+shared skills also require Git, Python, Bash, and curl. On Windows, use an
+available Bash environment such as Git Bash. The first launch downloads the
+bridge. No API key or client secret is bundled.
+
+Use Cursor's [plugin installation flow](https://cursor.com/docs/plugins),
+then enable CloudAEye and authenticate its MCP connection. Select skills from
+the `/` menu and disable any duplicate standalone CloudAEye connection.
+No platform-specific installer is needed; Claude's `.mcp.json` is unchanged.
+
+For self-hosting, replace the URL in `cursor/mcp.json` with your HTTPS,
+OAuth-enabled endpoint before installing.
 
 ## Authenticate
 
@@ -121,13 +154,23 @@ The plugin uses `https://api.cloudaeye.com/mcp` by default. Set `CLOUDAEYE_URL` 
 
 ## Data Flow
 
-Each operational skill:
+Each session-based review skill:
 
 1. Detects the provider, repository URL, current branch, and base branch.
 2. Calls the session-free `initialize_repository` tool; it opens setup only when the provider is not connected.
 3. Calls the OAuth-authenticated `start_session` tool after initialization.
 4. Builds and uploads the diff with `git diff` after `git add --intent-to-add .` so untracked files are included.
 5. Calls the requested MCP review tool with the returned session ID.
+6. For queued responses, keeps the `job_id` and polls `get_job_result` every
+   30 seconds, then reads the original tool response under `result`. Never
+   re-submits analysis to check progress. Direct responses remain supported.
+
+Queued tools include `inspect_diff`, `describe_change`, `ask`, `implement`,
+`check_task`, `review_arch`, `control_flow`, `slop_score`, `change_risk`, and
+`explain`. `create_issue` returns ticket outcomes directly, without polling.
+Wait for a review before planning fixes or filing its findings; do not overlap
+review/fix workflows on one session. Failed or expired results are not clean
+verdicts, and uncertain ticket/comment delivery must not be retried automatically.
 
 The upload token is placed in a private temporary curl config, is not printed, and is deleted when the upload command exits. The `.cloudaeye/` scratch directory contains only gitignored session diff data. Previously stored credential files are neither read nor changed.
 
