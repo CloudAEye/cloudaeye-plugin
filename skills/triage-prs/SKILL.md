@@ -100,8 +100,8 @@ the user means, ask.
 
 When `labelling.needed` is not empty and `labelling.started` is absent, ask once:
 *N repositories have no component labels yet, which makes business impact less exact.
-Label them in the background? It takes 3 to 8 AI calls per repository, once, billed to
-your team.* On yes, call `triage_prs` again with the same arguments and `label=true`,
+Label them in the background? It is a one-off AI cost per repository, billed to your
+team.* On yes, call `triage_prs` again with the same arguments and `label=true`,
 and print the new card. Never pass `label=true` without asking.
 
 ### 8. End there
