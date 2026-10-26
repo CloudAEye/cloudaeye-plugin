@@ -6,6 +6,13 @@ argument-hint: "[here | repo | all] [a note: 'I have half an hour'] [okrs:<file 
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__triage_prs", "mcp__cloudaeye__triage_prs", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository"]
 ---
 
+## Direct Result
+
+`triage_prs` returns its card directly. Do not poll for it or expect a job ID, and
+call it once per request: it reads every connected repository, so a run can take a
+minute when nothing was read recently, and runs soon after reuse what it read. It
+never runs a review or a risk analysis, so there is no other job to wait for.
+
 ## Steps
 
 ### 1. Read the arguments
@@ -74,12 +81,15 @@ someone else's queue.
 
 It is rendered server-side: the pick with *Why now* and *Look at*, the rest in order,
 what is not your move yet, and what was not measured. Do not reorder, shorten or reword
-it, and do not add priorities or reasons of your own.
+it, and do not add priorities or reasons of your own. **The list is numbered by the
+server, 1 the pick; never renumber it.** "The second one" or "number 3" is the PR whose
+`rank` is that number; `#3` is a pull request's own number. When it is unclear which
+the user means, ask.
 
 | field | what to do with it |
 |---|---|
-| `pick` | The PR to review next. Use it when the user says "ok, review it". |
-| `queue` | The rest, in order. Use it to turn "the second one" into a PR. |
+| `pick` | The PR to review next, `rank` 1. Use it when the user says "ok, review it". |
+| `queue` | The rest, in order, each with the `rank` the card prints. Use it to turn "the second one" into a PR. |
 | `not_your_move` | PRs waiting on their authors. Already on the card. |
 | `not_prioritised` | PRs whose code could not be read. Already on the card. |
 | `unmeasured` | What was not measured. Not measured is not low priority: say so if the user leans on it. |

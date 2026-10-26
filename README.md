@@ -167,16 +167,18 @@ Each session-based review skill:
 
 Queued tools include `inspect_diff`, `describe_change`, `ask`, `implement`,
 `check_task`, `review_arch`, `control_flow`, `slop_score`, `change_risk`, and
-`explain`. `create_issue` returns ticket outcomes directly, without polling.
+`explain`. `create_issue`, `assign_reviewer` and `triage_prs` answer directly,
+without polling.
 Wait for a review before planning fixes or filing its findings; do not overlap
 review/fix workflows on one session. Failed or expired results are not clean
 verdicts, and uncertain ticket/comment delivery must not be retried automatically.
 
 The upload token is placed in a private temporary curl config, is not printed, and is deleted when the upload command exits. The `.cloudaeye/` scratch directory contains only gitignored session diff data. Previously stored credential files are neither read nor changed.
 
-Three commands differ:
+Four commands differ:
 
 - `/cloudaeye:create-owners` calls nothing. It runs `git blame` on your machine and writes `OWNERS.md` files into the working tree.
+- `/cloudaeye:triage-prs` opens no session and uploads nothing: the server reads the open pull requests of every connected repository itself. It sends your GitHub username when `gh` or your git email shows it, a note in your own words, and an OKR document's text when you name one, never stored.
 - `/cloudaeye:assign-reviewer` opens no session and uploads no diff: the server reads the pull request itself. When the target branch has no `OWNERS.md`, it runs `create-owners` at the root first and sends the text of the working tree's `OWNERS.md` files — GitHub usernames, shares and teams, never an email address — with the request, until they are merged.
 - Pull-request commands (`#412`) upload nothing: the server fetches the diff.
 

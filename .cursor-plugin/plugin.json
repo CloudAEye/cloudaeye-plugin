@@ -1,7 +1,7 @@
 {
   "name": "cloudaeye",
-  "version": "0.21.2",
-  "description": "CloudAEye code reviews, security checks, change descriptions, and fix planning.",
+  "version": "0.22.1",
+  "description": "CloudAEye code reviews, security checks, change risk, reviewer suggestions, a review queue that picks the PR to review next, change descriptions, and fix planning.",
   "author": {
     "name": "CloudAEye",
     "email": "support@cloudaeye.com"

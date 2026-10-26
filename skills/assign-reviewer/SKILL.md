@@ -3,8 +3,16 @@ name: assign-reviewer
 description: Suggest who should review an open pull request, say why, show their review queue, and suggest what they should check — from code ownership (OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's queue. Takes a note in your own words after the PR number ("hardik is away", "urgent, nobody busy"). When the repository has no OWNERS.md yet, it creates ownership at the root from git history first, in your working tree. It only suggests; it requests a review on GitHub only when you ask it to.
 when_to_use: Use when the user asks who should review a pull request, wants a reviewer suggested or assigned, or asks to request a review. Not for whether a pull request is risky (that is /cloudaeye:risk-score).
 argument-hint: "<PR number like #412> [a note: 'hardik is away', 'urgent, nobody busy']"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Direct Result
+
+`assign_reviewer` answers directly, both the recommendation and the request. Do
+not poll for it or expect a job ID. It reads the risk score, AI slop and review
+that already ran on this commit, so if a `/cloudaeye:risk-score` or review job
+on this pull request is still queued or running, poll that job's existing ID
+until it completes before calling; never start one to fill a gap.
 
 ## Steps
 
