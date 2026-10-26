@@ -6,6 +6,27 @@ argument-hint: "<PR number like #412> [days, 7-90, default 21]"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
+
 ## Steps
 
 ### Repository initialization gate
@@ -72,9 +93,8 @@ from the repository on GitHub, and a working tree has none of them.
    answer, not something to work around.
 
 2. Call `change_risk` with `session_id` and, when the user gave one, `days`.
-   It queues; poll `get_job_result(job_id)` every 30 seconds until it is
-   `completed`, then read `result`. One argument writes, and it needs a
-   decision:
+   Follow **Queued Result** above, then read `result`. One argument writes,
+   and it needs a decision:
 
    - `post`: **writes the card on the pull request**, where reviewers see it
      (editing CloudAEye's earlier risk card there rather than adding a second).
@@ -93,9 +113,10 @@ from the repository on GitHub, and a working tree has none of them.
    footnote says what was filled in.
 
 3. Print `result.card` **verbatim**. It already carries the next step, so do
-   not repeat it. When the card is not on the pull request yet (no `posted`, or
-   `posted.status` other than `ok`), add one line: *reply "post" to put it on
-   #<n>*. End with the link. Then stop.
+   not repeat it. When no post was requested (no `posted`), add one line:
+   *reply "post" to put it on #<n>*. Otherwise report the delivery status and
+   note; `unknown` does not establish whether the card was posted. Never
+   re-enqueue to retry a post. End with the link. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
    it opens with a summary (the score, this PR's AI slop, the bugs and rework in
@@ -117,7 +138,7 @@ from the repository on GitHub, and a working tree has none of them.
    | `slop` | This PR's AI slop score (`score`, `band`) and where it came from (`ran`: `ran` — reviewed for this card; `reused` — an earlier review or risk card at this commit, nothing paid twice). `measured: false` blocks automatic approval: say so. |
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
-   | `posted.status` | `ok` means the card is on the pull request. Anything else means it is **not** — say so and why. Never write "posted" without reading this. |
+   | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this. |
    | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
 
 ## Notes

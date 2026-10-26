@@ -1,0 +1,6 @@
+{
+  "client_name": "CloudAEye Cursor",
+  "application_type": "native",
+  "token_endpoint_auth_method": "none",
+  "scope": "mcp:tools openid offline_access"
+}

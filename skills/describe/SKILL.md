@@ -2,8 +2,29 @@
 name: describe
 description: Describe the uncommitted changes in this repo — a Change Description heading and an Important Changes bullet list, in plain markdown ready to paste into a PR or a commit message. Trivial diffs short-circuit to one line.
 when_to_use: Use when the user asks what changed, for a PR description, a commit message, or a summary of the pending diff.
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__describe_change", "mcp__cloudaeye__describe_change"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__describe_change", "mcp__cloudaeye__describe_change", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
 
 ## Steps
 
@@ -133,7 +154,8 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 ## Notes
 
-- This is a **single-shot** skill — one call, print the output, done. No loop, no fix-and-retry.
+- This is a **single-enqueue** skill: submit once, poll the job, print the
+  original description, done. No resubmission or fix-and-retry loop.
 - Good moments to invoke: before opening a PR, before writing a commit message, when the user asks "what did I just change?"
 - Pre-commit only: the diff is always `git diff` (working tree vs `HEAD`). Committing moves `HEAD`; the review session persists.
 - Without a `client_git_token` / `client_git_owner` configured on the server, the code-context refresh is skipped and the description falls back to diff-only analysis (still works, just less precise on blast radius).

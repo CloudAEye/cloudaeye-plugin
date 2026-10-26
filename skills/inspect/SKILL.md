@@ -2,13 +2,34 @@
 name: inspect
 description: Bug-hunting CloudAEye pass over the uncommitted changes in this repo, over one file or directory of them, or over an open pull request given its number — logic errors, edge cases, input validation, error handling, concurrency, dead imports. Security is left to its own pass, so this is the cheap one to run after finishing a coding task. Reports findings; it never edits code on its own.
 when_to_use: Use after completing a coding task and before reporting done, or when the user asks you to check or review what you just changed. Security categories are opt-in — use /cloudaeye:security or /cloudaeye:review for those.
-argument-hint: "[optional: a path, a PR number like #5, and/or --critical]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff"]
+argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
 
 ## Three modes
 
-The argument decides which. Read it before anything else:
+Parse the model options and severity flags below first. Decide the mode only from the remaining path or PR argument:
 
 | Argument | Mode |
 |---|---|
@@ -18,6 +39,31 @@ The argument decides which. Read it before anything else:
 | `--critical` `--high` `--medium` `--low` | Combine with any mode above — reports that level **and higher**. |
 
 Digits mean a pull request. If the user really means a directory named `405`, they write `./405` and you treat it as a path.
+
+### Model options
+
+These options apply only to this invocation; they never change saved settings.
+
+| Flag | `inspect_diff` argument | Value |
+|---|---|---|
+| `--model` | `review_model` | Model family (for example, `gpt`) or exact model ID. |
+| `--model-provider` | `model_provider` | Hosting provider (for example, `azure`). |
+| `--invert-model` | `invert_model` | Boolean `true` or `false`, never a string. |
+
+Omit every option the user did not supply. In particular, omitted `invert_model`
+uses the tenant's saved inversion setting, not a client-side default. When
+inversion is enabled, this Claude Code flow uses the configured GPT reviewer.
+An explicit model or provider takes precedence over inversion. Pass all supplied
+options to the server; it resolves supported models, providers, and credentials.
+Reject missing values, unknown flags, or an inversion value other than `true`
+or `false` before initializing a session. Report server selection errors and
+stop; do not retry with a different model or silently drop an option.
+
+```text
+/cloudaeye:inspect --invert-model false
+/cloudaeye:inspect src/auth/ --high --model gpt
+/cloudaeye:inspect --model-provider azure
+```
 
 ### Path mode
 
@@ -210,6 +256,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
    - `intent`: the summary from step 2
    - `profile`: `"inspect"` — **always this value from this skill.** It runs the bug categories only. Do not pass `"security"` or `"review"` here; those belong to `/cloudaeye:security` and `/cloudaeye:review`, which the user invokes deliberately.
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Omit it entirely otherwise; do not default to a floor the user did not ask for.
+   - `review_model`, `model_provider`, `invert_model`: only when explicitly supplied, using the mappings in **Model options** above. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title`. Identity fields (repo/branch/head/language) are already on the review session, and `review_config` / `report_types` would override the profile.
 
    Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff`; it is pre-approved in this skill's frontmatter.
@@ -227,7 +274,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 - **A pull-request review is its own session,** separate from the working-tree one for the same repository, so it can never overwrite unfinished local work. Re-running the same PR resumes that PR's session; if the PR has new commits the server re-fetches, and if it does not, nothing is re-derived.
 - **`/cloudaeye:implement` does not work on a pull-request review.** Its plans describe edits to a working tree, and the source for a PR lives on GitHub. If the user wants to fix what the review found, they check the branch out and review again locally. Say that rather than offering a plan that cannot be applied.
-- This is a **single-shot** skill — one call, report the output, done. No fix-and-retry loop inside the skill.
+- Submit analysis once, resolve its response using **Queued Result**, report the output, then stop. No fix-and-retry loop inside the skill.
 - **Bugs only.** This profile runs: logic errors, syntax/compile breaks, edge cases, input validation, concurrency safety, error handling, code clarity, naming consistency, and code signatures. Code signatures include a **compiler type check** over the AST graph, which catches callers broken by a changed definition even when those callers are in files this diff never touched — so a `code_signature` finding may point at a file you didn't edit. That's the point; don't dismiss it as out of scope. Security prompts are **not** part of it — they cost real tokens on every scanned file, so they are routed behind `/cloudaeye:security` (security surface only) and `/cloudaeye:review` (bugs + security). If the change touches authentication, input handling from untrusted sources, deserialization, secrets, crypto, LLM prompts, tool definitions, or agent orchestration, say so and suggest `/cloudaeye:security` — don't silently skip it, and don't run it uninvited.
 - **Re-inspection is user-driven.** The user may say "fix issue X and run inspect again" — that's fine, just re-invoke this skill. The server resumes the same review session for the OAuth account and repository, so iteration continuity is server-handled. Your job on re-invocation is just to write a sharp intent (step 2) that describes only the most recent change.
 - Pre-commit only: the diff is always `git diff` (working tree vs `HEAD`). Committing moves `HEAD`, but the review session persists — its recorded `head` is refreshed on the next call, and prior intent and task context carry across.
