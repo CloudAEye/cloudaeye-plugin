@@ -1,0 +1,34 @@
+---
+description: Host compatibility for shared CloudAEye skills in Cursor.
+alwaysApply: true
+---
+
+# CloudAEye in Cursor
+
+Apply this guidance only when using a CloudAEye skill. Do not start a review,
+authenticate, upload code, or edit files merely because this plugin is installed.
+
+- Shared skills use Claude-style tool aliases such as
+  `mcp__plugin_cloudaeye_cloudaeye__describe_change` and
+  `mcp__cloudaeye__describe_change`. In Cursor, call the actually available tool
+  from the `cloudaeye` MCP server with the same operation name. Apply this to
+  initialization, session creation, analysis, and `get_job_result`; do not stop
+  just because the client-specific prefix differs. Stop if the operation itself
+  is unavailable. Do not substitute another server or invent a tool.
+- For `${CLAUDE_PLUGIN_ROOT}` references, use the loaded plugin's installation
+  directory, not the repository being reviewed. Use `CURSOR_PLUGIN_ROOT` when
+  available; otherwise derive the root from the loaded skill's file path by
+  taking the parent of its `skills/` directory. Set `CLAUDE_PLUGIN_ROOT` to that
+  resolved absolute path within the same shell command as the bundled script.
+- Run bundled Bash snippets in an available Bash shell. Do not execute Bash
+  syntax as PowerShell or omit upload validation and token-handling checks.
+- Claude's `/mcp` authentication instructions mean Cursor's Customize > MCPs
+  connection UI here. Reload the connection when sign-in is required; its OAuth
+  bridge opens the browser and handles its own credentials. Do not copy
+  credentials from another client or print OAuth/upload tokens.
+- Select skills from Cursor's `/` menu. Claude's `/cloudaeye:<verb>` references
+  name the corresponding shared skill; do not assume identical slash-command
+  spelling in this client.
+- Preserve each skill's scope, review profile, bounded job polling, finding
+  numbers, and explicit approvals for edits, comments, and tickets.
+  Help remains documentation-only, and create-owners remains local.

@@ -3,8 +3,29 @@ name: ask
 description: Ask a free-form question about the uncommitted changes in this repo and get an answer grounded in the repository's code graph — callers, definitions and usage traces, not just the diff text. Returns an answer, not a review, and never edits code.
 when_to_use: Use for blast-radius questions ("what else calls this?"), "what did this do before?", "is this pattern used elsewhere?", or a second opinion the coding agent cannot give from its own context window.
 argument-hint: "[question about the pending change]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__ask", "mcp__cloudaeye__ask"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__ask", "mcp__cloudaeye__ask", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
 
 ## When to run
 

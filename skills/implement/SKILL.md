@@ -3,10 +3,37 @@ name: implement
 description: Plan a fix for findings a CloudAEye review already produced. You say which ones in your own words — "fix the 2nd point, and use a context manager" — and the server returns a fix plan grounded in the repository's code graph, including the call sites and tests the change affects. It plans; it never edits on its own.
 when_to_use: Use after /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review has returned findings and the user wants help fixing some of them. Fixing a finding directly without this skill is also fine — this is for when the plan should account for the whole repository, not just the file being edited.
 argument-hint: "[finding numbers like [1,3], or nothing for all of them]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
+
 ## When to run
+
+The prior review must have completed first. If it is queued/running/retrying,
+poll its existing job ID and read its numbered findings before any session
+upload or planning call. There is no `review_job_id` argument: `implement`
+reads the saved report on the session. Do not overlap a review, planning,
+editing, or re-inspection workflow on this session.
 
 The user invoked `/cloudaeye:implement`, or asked you to fix findings from a CloudAEye review and wants the server's plan for them.
 
@@ -95,7 +122,8 @@ What it adds over you doing it directly is **blast radius**. You can see the dif
    Call `mcp__plugin_cloudaeye_cloudaeye__implement`; it is pre-approved in this skill's frontmatter.
 
    Do **not** send the findings themselves — the server reads its own saved report, which is more complete than what came back over the wire. Do not read the changed source files first either; the server has them staged and its own tooling to trace through them.
-3. Handle the response before touching any code.
+3. Finish the Queued Result polling step, then handle the original response
+   before touching any code. The MCP job returns plans, never applied edits.
    - **`error`** — report it as written. It means no findings are on record; the fix is to run a review first, which the message already says.
    - **`needs_clarification`** — the request was ambiguous and **nothing was planned**. Ask the user which finding they meant, using the candidates in the message, and stop. Do not pick one yourself: a wrong guess edits the wrong code with the user's apparent blessing.
    - **`plans` empty with `unresolved`** — the request did not match any finding. Show `available_numbers` and ask.

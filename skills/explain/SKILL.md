@@ -3,8 +3,49 @@ name: explain
 description: Explain a Jira or GitHub issue against the code it actually touches — the components involved, how they work today, and the related patterns and configuration around them. CloudAEye reads the repository's graph and vector store, which is why this answers things the issue text alone cannot.
 when_to_use: Use when the user asks what an issue is about, what it would take to fix it, or which code it touches — before picking up a ticket, or when triaging one someone else filed. Takes a Jira key, a GitHub issue number, or an issue URL.
 argument-hint: "jira <KEY|id> | github <issue#> | <issue URL>"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__explain", "mcp__cloudaeye__explain"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__explain", "mcp__cloudaeye__explain", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
+
+## Legacy Explain Pending
+
+Keep the response's origin: a direct `explain` response is different from the
+inner result of a completed MCP job. If the initial direct response has
+`status: pending` and no `job_id`, it is the legacy synchronous server, not a
+completed queued result. This is the only exception to the no-resubmit rule:
+the legacy backend deduplicates by issue, so resume `explain` with exactly the
+same `issue`, `repo`, `source`, and any originally supplied `wait_seconds`.
+Do this at most three additional calls, waiting 30 seconds between calls and
+checking the original 30-minute wall-clock deadline before every resume.
+Stop sooner on `ok` or `error`. At either limit, report that the issue is still
+pending and retain its issue reference and original arguments for a later
+resume; do not invent or ask for an MCP job ID that the legacy server did not
+return. If a resume returns a queued MCP job ID, switch to **Queued Result**
+with the remaining original deadline and make no further `explain` resumes.
+
+An inner `status: pending` under outer `status: completed` is never this legacy
+case. Report the incomplete delegated outcome and retain the existing MCP job
+ID; do not re-submit `explain` or apply the three-call legacy resume allowance.
 
 ## What this is
 
@@ -96,6 +137,13 @@ Do not proceed until this gate reports `ready` or `initialized`.
    - `repo`: `INIT.repo_full`
    - `source`: `jira` or `github`, only when step 1 established it
 
+   Submit once and keep whether the initial response is direct or queued.
+   `wait_seconds` remains accepted for compatibility but is deprecated for
+   queued calls. The worker follows the same delegated CloudAEye analysis
+   until terminal. Poll the returned MCP job ID via **Queued Result**; never
+   call `explain` to advance a queued job. Only an initial direct `pending`
+   response without a job ID follows **Legacy Explain Pending** above.
+
    `repo` is what a bare issue number is resolved against. A Jira key does not
    need it — CloudAEye picks the relevant repository itself, and the response
    says which one it picked, which may not be the one you are standing in.
@@ -108,7 +156,8 @@ Do not proceed until this gate reports `ready` or `initialized`.
    | `status` | what to do |
    |---|---|
    | `ok` | Report it — step 4. |
-   | `pending` | Still being generated. Say so, then call `explain` again with the **same arguments** — there is no id to pass, and a second call never starts a second run. Do this at most three times, then say it is still running and that re-running later will pick up the finished analysis. |
+   | `pending`, direct legacy response without a job ID | Follow **Legacy Explain Pending**: at most three same-argument resumes within the original deadline. No MCP job ID is available. |
+   | `pending`, nested under a completed queued result | Report the incomplete delegated outcome and keep the existing MCP job ID. Do not re-submit `explain` automatically. Normal queued backend waiting is represented by outer queued/running/retrying status. |
    | `error` with a `note` about not retrying | A previous attempt failed and CloudAEye will not retry it on its own. Print the `error` and the `note` as written — a re-run returns the same failure, so do not offer one. |
    | `error` with `setup_required` | The repository is not integrated. Report the guidance and stop. |
    | `error` otherwise | Report the `error` field as written and stop. |

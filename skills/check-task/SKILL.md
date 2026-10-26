@@ -3,8 +3,29 @@ name: check-task
 description: Check whether the uncommitted changes in this repo actually do what the task asked. Takes a GitHub issue URL, Jira ticket IDs, a mixed reference list, or freeform task text, and returns a DONE / NOT DONE verdict with a per-requirement checklist and the gaps.
 when_to_use: Use before marking work complete, or when the user asks whether the change satisfies an issue, a ticket, or the request they made. Accepts an issue URL, IDs like BETA-5225, a list of both, or plain text.
 argument-hint: "[issue URL | TICKET-123 | task description]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Queued Result
+
+Submit analysis once. A direct response without `job_id` uses the original
+output rules below; report `status: error` and stop. An active response
+(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+
+For a queued response, keep its `job_id` and poll
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
+the submitting OAuth account while status is `queued`, `running`, or `retrying`.
+Stop after 60 polls or 30 minutes from submission, whichever comes first;
+check the deadline before each call. On timeout or unavailable polling,
+report the limitation and retain the ID for later. Never re-submit to check
+progress or start replacement work automatically.
+
+On `completed`, require a `result` dictionary and use it as **the response**
+below, preserving the tool's original fields. Completion is not a clean
+verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
+or `error`; report missing/expired results, never treat them as empty or clean.
+Finish the job before dependent actions, edits, or another review/fix/upload
+on the same session; a pending job does not cover new code.
 
 ## Arguments
 
@@ -163,7 +184,7 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
 ## Notes
 
-- This is a **single-shot** skill — one call, print the output, done. No fix-and-retry loop inside the skill.
+- Submit analysis once, resolve its response using **Queued Result**, print the output, then stop. No fix-and-retry loop inside the skill.
 - **The task is persisted on the review session.** After a successful check, a later `start_session` resume surfaces it as `prior_task` so the user isn't re-prompted. For `github-issue` the stored value is the URL (re-fetched each call), not a frozen snapshot — so a re-check picks up new issue comments.
 - **GitHub fetch requires `client_git_token` on the server.** If it's missing, or the URL is malformed / the token lacks access, `check_task` returns a structured `error` (not a verdict) — surface it and offer to let the user paste the issue body as freeform `user-text` instead.
 - **Jira fetch goes through the tenant's CloudAEye Jira (Forge) app — same integration as cloud reviews.** The tenant comes from the verified OAuth token used by `start_session`, never from repository or machine config. The server side needs `BITBUCKET_FUNCTION_KEY` and the Mongo store (`TEST_RCA_MONGODB_URL`), and the tenant must have the CloudAEye Jira app installed. When they're missing or a key doesn't resolve: a task that is *only* ticket refs returns a structured `error` (nothing to judge — surface it and offer pasting the ticket body as `user-text`); a task that also carries prose proceeds against the prose with a visible "reference(s) not checked" note in the report. A partially-resolved list likewise carries a note — a verdict never silently implies an unfetched ticket was verified.

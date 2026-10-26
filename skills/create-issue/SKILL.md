@@ -3,8 +3,13 @@ name: create-issue
 description: File findings from a CloudAEye review as tracking issues — a Jira ticket or a GitHub issue, with an optional assignee. Takes the finding numbers the review printed. It creates real tickets; it never edits code.
 when_to_use: Use after a CloudAEye review, when the user wants a finding tracked rather than fixed now — "raise a ticket for that", "file the second one to Jira", "create an issue for the auth bug". For fixing a finding instead, use /cloudaeye:implement.
 argument-hint: "[2] jira Jane Doe   ·   [1,3] github octocat"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__create_issue", "mcp__cloudaeye__create_issue"]
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__create_issue", "mcp__cloudaeye__create_issue", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
+
+## Direct Result
+
+`create_issue` returns ticket results directly. Do not poll for ticket creation
+or expect a job ID. Wait for any preceding review job to finish before calling.
 
 ## What this is
 
@@ -26,6 +31,11 @@ confirm before calling.
 1. **There must be a review in this session already.** If none has run, say so
    and offer to run one — do not run it silently, and never invent findings to
    file.
+
+   If that review is still queued/running/retrying, poll its existing job ID
+   until it completes and read its original numbered findings before continuing.
+   Do not pass a `review_job_id`; the tool reads the session's saved report.
+   Do not run another review or fix workflow concurrently on this session.
 
 2. **Read which findings the user means, and do not guess.**
 
@@ -54,6 +64,10 @@ confirm before calling.
    said about it ("let's fix this before the release"). It goes above the
    finding in the ticket description.
 
+   Before submitting, show the exact findings, ticket count, tracker, and any
+   assignee/note, then obtain explicit user approval. Call once and interpret
+   the direct ticket outcomes below.
+
 5. **Report what happened, per list in the response.**
 
    - **`filed`** — one line each: the finding, and the ticket key with its link
@@ -64,6 +78,9 @@ confirm before calling.
    - **`failed`** — print the `error` as written. `no Jira integration` is
      configuration to fix, not an outage; `issues are disabled` is a GitHub
      repository setting. Neither is worth retrying as-is.
+   - **Interrupted request / unconfirmed delivery** - an external write may have happened.
+     Report the uncertainty; do not repeat the request automatically. Check
+     the tracker first before any explicitly authorized new attempt.
    - **`assignee_dropped`** on a filed entry — the issue exists but that user
      could not be assigned on that repository. Say both halves; the ticket is
      real and it is unassigned.
@@ -74,9 +91,10 @@ confirm before calling.
 
 ## Notes
 
-- **Re-running is safe.** A defect already filed from this session is matched by
-  content, not by its review number, so it is not filed twice even if a later
-  review renumbers it. Say that rather than warning the user off.
+- **Do not automatically repeat ticket writes.** Confirmed prior tickets are
+  matched by content, not review number, but an interrupted/unconfirmed write
+  may still exist externally. Check the tracker before an explicitly approved
+  retry; do not call create_issue again just to check delivery.
 - **Jira works without a pull request**; so does GitHub, which files against the
   session's repository.
 - **It never edits your working tree** and never opens a pull request.
