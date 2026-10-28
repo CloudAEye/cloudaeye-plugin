@@ -11,15 +11,16 @@ Code review, security checks and review intelligence in Claude Code — on your 
 | `/cloudaeye:inspect` | Find bugs: logic errors, missed edge cases, invalid input, concurrency problems, broken signatures. Returns a verdict and numbered findings. |
 | `/cloudaeye:security` | Find security issues in application code, LLMs, AI agents and MCP tools, including secrets in changed lines. |
 | `/cloudaeye:review` | Bugs and security in one full review, before a significant pull request. |
+| `/cloudaeye:ultrareview` | Every review of a change in one run: review (inspect + security), AI slop, the risk verdict, the PR checklist on a PR, architecture, control flow, and the task check when you name one. It opens with whether the change is approved for merge or needs a human review, suggests reviewers on a PR when it does, then a results table, what to do next and every command's full output. Each pass runs once, and anything already run on the same change is reused. |
 | `/cloudaeye:describe` | Describe the change for a PR body or commit message. |
 | `/cloudaeye:control-flow` | Before/after sequence diagrams of the calls the change added, removed or moved, and who in other repositories calls them. |
 | `/cloudaeye:review-arch` | What the change does to the architecture: services, layers and dependencies, with findings and questions for a senior review. |
 | `/cloudaeye:ask` | Ask about the change: what calls this, how it behaved before, where a pattern is used. |
 | `/cloudaeye:check-task` | Check the change against a Jira ticket, GitHub issue or written spec: DONE or NOT DONE, with what is missing. |
-| `/cloudaeye:check-pr` | Run the repository's PR checklist on an open PR and post the report there. |
+| `/cloudaeye:check` | Run the repository's PR checklist on an open PR (`#412`) and post the report there. Replaces `check-pr`. |
 | `/cloudaeye:implement` | Turn review findings into a fix plan: what to change, where, and what else it affects. |
 | `/cloudaeye:slop-score` | How much careful reading a change needs: a score out of 100 from nine code-quality signals, with the findings. |
-| `/cloudaeye:risk-score` | Whether an open PR needs a human reviewer, and why, from its files' history, its author's recent PRs and its AI slop. |
+| `/cloudaeye:risk-score` | Whether an open PR needs a human reviewer, and why, from its files' history, its author's recent PRs and its AI slop. With no PR number it assesses your change before you push it. |
 | `/cloudaeye:triage-prs` | Which PR to review next across every connected repository, and why. A note like "I have half an hour" steers it. Reads only. |
 | `/cloudaeye:assign-reviewer` | Who should review an open PR, why, and what they should check. A note like "Tom is away" steers it; a review is requested only when you ask. |
 | `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
@@ -30,9 +31,11 @@ Code review, security checks and review intelligence in Claude Code — on your 
 
 None of them edits your code. `/cloudaeye:implement` returns a plan, and Claude applies it.
 
-**What writes outside your machine:** `check-pr` posts its report on the pull request; `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card only when you ask; `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue.
+**What writes outside your machine:** `check` posts its report on the pull request, and `ultrareview` on a PR posts its whole report as one comment (edited in place when run again; reviewers are named, never requested); `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card only when you ask; `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue.
 
 `/cloudaeye:help inspect` prints one command's full manual. It works offline, with no sign-in.
+
+Always type `/cloudaeye:ultrareview` in full: a bare `/ultrareview` is Claude Code's own command. Asking about the same change twice costs nothing the second time: each command answers from what already ran on it, and a new change runs again.
 
 ## Typical workflows
 
@@ -45,6 +48,7 @@ With no argument a command reviews your **uncommitted changes**; with a pull-req
 /cloudaeye:implement [1,3]          plan fixes for findings 1 and 3; Claude applies them
 /cloudaeye:check-task PROJ-123      does the change do what the ticket asked?
 /cloudaeye:review                   bugs and security in one pass, before opening the PR
+/cloudaeye:ultrareview              every review at once, with a merge verdict and a results table
 /cloudaeye:describe                 the PR body
 ```
 
@@ -52,10 +56,11 @@ With no argument a command reviews your **uncommitted changes**; with a pull-req
 
 ```text
 /cloudaeye:review #412              the full review, on the pull request
+/cloudaeye:ultrareview #412         the same on a PR, plus the checklist and reviewers; posted as one comment
 /cloudaeye:risk-score #412          does it need a human reviewer, and why
 /cloudaeye:assign-reviewer #412     who should review it; add a note like "Tom is away"
 /cloudaeye:triage-prs               which PR to review next, and why
-/cloudaeye:check-pr #412            the hygiene checklist
+/cloudaeye:check #412               the hygiene checklist
 /cloudaeye:add-docs #412            docstrings, posted as suggestions
 ```
 

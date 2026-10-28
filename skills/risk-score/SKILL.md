@@ -1,8 +1,8 @@
 ---
 name: risk-score
-description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
-when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Not for who should review it. Pull requests only — the history is the repository's, read on GitHub.
-argument-hint: "<PR number like #412> [days, 7-90, default 21]"
+description: Assess the change risk of an open pull request, or of your change before you push it — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
+when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Also before a commit, on the working tree, to see how risky a change is before opening a pull request. Not for who should review it. The history is the repository's, read on GitHub.
+argument-hint: "[#PR [days]] | [--days N]  (no PR number: your working tree)"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
@@ -78,12 +78,24 @@ fi
 Do not start a session until this gate reports `ready` or `initialized`.
 
 
-### Pull requests only
+### Two ways in
 
-`/cloudaeye:risk-score 412` or `/cloudaeye:risk-score #412`, optionally followed by
-a window in days (`/cloudaeye:risk-score #412 30`). With no pull-request number, ask for one —
-there is no working-tree mode: bugs, rework and the author's history are read
-from the repository on GitHub, and a working tree has none of them.
+| Argument | Mode |
+|---|---|
+| `#412`, or bare digits like `412`, optionally a window: `#412 30` | **Pull request** — PR 412 of this repository. |
+| *none*, optionally `--days 30` | **Working tree** — your uncommitted and unpushed change, before you open a pull request. |
+
+The window is 7–90 days, 21 by default. Digits mean a pull request; on the
+working tree the window is given as `--days N`.
+
+The history is the repository's either way — bugs, rework and ownership are
+read from GitHub at the integrated branch, and the change's AI slop score runs
+on the change itself. A working tree differs from a pull request in four ways,
+and the card says so: the author is **you**, nothing from a pull request is
+read, **unit-test coverage is not measured** (it comes from the PR checklist,
+which needs a pull request), and **nothing can be posted**.
+
+#### Pull request
 
 1. Call `start_session` with `INIT.repo_full`, the current `branch` and `head`,
    **and `pr_number`** (the digits, any `#` stripped). The server fetches the
@@ -92,14 +104,78 @@ from the repository on GitHub, and a working tree has none of them.
    (closed, from a fork, over 50 files, not into the integrated branch) is an
    answer, not something to work around.
 
-2. Call `change_risk` with `session_id` and, when the user gave one, `days`.
-   Follow **Queued Result** above, then read `result`. One argument writes,
-   and it needs a decision:
+#### Working tree
 
-   - `post`: **writes the card on the pull request**, where reviewers see it
-     (editing CloudAEye's earlier risk card there rather than adding a second).
-     Pass `true` only after saying in one line — *CloudAEye will post the risk
-     card on pull request #<n>* — and getting a clear yes.
+1. Find your GitHub username, so the author rows are about you:
+
+   ```bash
+   gh api user --jq .login 2>/dev/null || true
+   git config user.email 2>/dev/null || true
+   ```
+
+   `AUTHOR` is the first that gives a login: the `gh` output, or the name in an
+   email of the form `<id>+<name>@users.noreply.github.com`. Otherwise leave it
+   empty: the server finds it from your sign-in when it can, and when it cannot,
+   the author rows are reported as not measured.
+
+   Then collect the branch and HEAD, call `start_session` with
+   `INIT.repo_full`, `branch` and `head` (no `pr_number`), validate what it
+   returns, and upload the diff — exactly as `/cloudaeye:review` does on a
+   working tree: `session_id` hex digits and dashes, `upload_token` 64 hex
+   characters, `upload_url` HTTPS or localhost HTTP, `target_branch` matching
+   `[A-Za-z0-9._/-]+` or empty. One Bash call; the token goes only into a
+   private temporary curl config.
+
+   ```bash
+   cd "$(git rev-parse --show-toplevel)" || exit 1
+   mkdir -p .cloudaeye/session && printf '*\n' > .cloudaeye/.gitignore
+   CE_SESSION='<session_id>'
+   CE_UPLOAD_URL='<upload_url>'
+   CE_UPLOAD_TOKEN='<upload_token>'
+   TARGET='<validated target_branch or empty>'
+   case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
+   case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
+   [ "${#CE_UPLOAD_TOKEN}" = 64 ] || { echo "cloudaeye_error=bad_upload_token"; exit 1; }
+   case "$CE_UPLOAD_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) echo "cloudaeye_error=insecure_url"; exit 1;; esac
+   CE_TMP=$(mktemp -d 2>/dev/null) || CE_TMP="${TMPDIR:-${TMP:-/tmp}}/cloudaeye-$$"
+   mkdir -p "$CE_TMP" || { echo "cloudaeye_error=bad_config"; exit 1; }
+   trap 'rm -rf "$CE_TMP"' EXIT INT TERM
+   printf 'header = "X-Upload-Token: %s"\n' "$CE_UPLOAD_TOKEN" > "$CE_TMP/curl.cfg"
+   chmod 600 "$CE_TMP/curl.cfg" 2>/dev/null || true
+   case "$TARGET" in ''|-*|*[!A-Za-z0-9._/-]*) TARGET="";; esac
+   HEAD_SHA=$(git rev-parse HEAD); BASE=""; SRC=fork_point
+   if [ -n "$TARGET" ]; then
+     git rev-parse --verify -q "origin/$TARGET" >/dev/null 2>&1 || \
+       GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS=echo \
+       git -c credential.helper= fetch -q origin "$TARGET" 2>/dev/null
+     BASE=$(git merge-base "origin/$TARGET" HEAD 2>/dev/null)
+   fi
+   [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
+   git add --intent-to-add . >/dev/null 2>&1
+   git diff "$BASE" > .cloudaeye/session/session.diff
+   UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
+     -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
+   echo "session_id=$CE_SESSION base_source=$SRC diff_bytes=$(wc -c < .cloudaeye/session/session.diff) upload_http=$UP"
+   ```
+
+   `cloudaeye_error=…` or `upload_http` not `200`: report it and stop.
+   `diff_bytes=0`: nothing to assess — say so and stop. `base_source=head`: the
+   diff holds only uncommitted edits, so say the history was compared against
+   your local HEAD.
+
+#### Both
+
+2. Call `change_risk` with `session_id`, `days` when the user gave one, and on
+   the working tree `author: AUTHOR` (omit it when empty). Follow **Queued
+   Result** above, then read `result`. One argument writes, and it needs a
+   decision:
+
+   - `post` (**pull request only**): **writes the card on the pull request**,
+     where reviewers see it (editing CloudAEye's earlier risk card there rather
+     than adding a second). Pass `true` only after saying in one line —
+     *CloudAEye will post the risk card on pull request #<n>* — and getting a
+     clear yes. Never pass it on the working tree: there is nothing to post on,
+     and the server refuses it.
 
    The assessment never writes on bug issues or Jira tickets. Where each bug is
    in the code (its files and who wrote them) is mapped in the background by
@@ -113,10 +189,13 @@ from the repository on GitHub, and a working tree has none of them.
    footnote says what was filled in.
 
 3. Print `result.card` **verbatim**. It already carries the next step, so do
-   not repeat it. When no post was requested (no `posted`), add one line:
-   *reply "post" to put it on #<n>*. Otherwise report the delivery status and
-   note; `unknown` does not establish whether the card was posted. Never
-   re-enqueue to retry a post. End with the link. Then stop.
+   not repeat it. On a pull request with no post requested (no `posted`), add
+   one line: *reply "post" to put it on #<n>*. Otherwise report the delivery
+   status and note; `unknown` does not establish whether the card was posted.
+   Never re-enqueue to retry a post. End with the link. On the working tree
+   (`subject: "change"`) there is no link and no post line: say once that the
+   card is about the change before it is pushed, and that running it again on
+   the pull request adds test coverage and can post the card. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
    it opens with a summary (the score, this PR's AI slop, the bugs and rework in
@@ -140,7 +219,8 @@ from the repository on GitHub, and a working tree has none of them.
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
    | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this. |
-   | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
+   | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. Absent on the working tree: give no link and never construct one. |
+   | `subject` | `change` on the working tree: the card speaks of "this change", coverage is a stated gap, and the author is you. When the author rows say *the author's GitHub login is not known*, suggest signing in to the GitHub CLI (`gh auth login`) so the next run can find it. |
 
 ## Notes
 

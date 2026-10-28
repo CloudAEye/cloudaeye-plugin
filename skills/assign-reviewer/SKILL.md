@@ -79,7 +79,9 @@ the card, and puts someone with room in their queue first when it asks for speed
 
 1. **Recommend.** Call `assign_reviewer` with `repo=INIT.repo_full`,
    `pr_number` (the digits, any `#` stripped), `require_owners=true`, and
-   `note=NOTE` when there is one. This call writes nothing anywhere.
+   `note=NOTE` when there is one. This call writes nothing on GitHub; CloudAEye
+   only keeps the suggestion for this commit, so a `/cloudaeye:ultrareview`
+   comment on the pull request can show the same reviewers.
    - `status: error` — report `error` and stop. An ineligible pull request
      (closed, from a fork, over 50 files, not into the integrated branch) is an
      answer, not something to work around.

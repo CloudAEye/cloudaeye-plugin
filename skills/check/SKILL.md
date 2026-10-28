@@ -1,8 +1,8 @@
 ---
-name: check-pr
-description: Run CloudAEye's PR hygiene checklist against an open pull request of this repository — docstring coverage, unit-test coverage, README freshness, dependency manifests, PR title and description quality, duplicate code, and a secret scan. Reports what each check found; it never edits code on its own.
-when_to_use: Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly. This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review.
-argument-hint: "<PR number, e.g. 405 or #405>"
+name: check
+description: Run CloudAEye's checklist against an open pull request of this repository, given its number (#405) — docstring coverage, unit-test coverage, README freshness, dependency manifests, PR title and description quality, duplicate code, and a secret scan. Reports what each check found and posts the full report on the pull request; it never edits code on its own.
+when_to_use: Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly ("/cloudaeye:check #405"). This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review. Replaces /cloudaeye:check-pr.
+argument-hint: "<#PR number, e.g. #405>"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr"]
 ---
 
@@ -13,7 +13,7 @@ This is the **counterpart** to the review commands, not a variant of them.
 | | runs | command |
 |---|---|---|
 | Bugs, security | the changed lines | `/cloudaeye:inspect`, `/cloudaeye:security`, `/cloudaeye:review` |
-| **Hygiene** | **the whole repository** | **`/cloudaeye:check-pr`** |
+| **Hygiene** | **the whole repository** | **`/cloudaeye:check #<PR>`** |
 
 The checks here are the ones that cannot run on a diff alone, because each needs
 knowledge of the whole repository or of the pull request itself: docstring
@@ -88,9 +88,10 @@ Do not proceed until this gate reports `ready` or `initialized`.
 1. Read the pull request number from the argument.
 
    Strip a leading `#`. It must be a positive whole number. If the user gave
-   nothing, ask which pull request — do **not** guess from the current branch,
-   and do not fall back to the working tree. There is no working-tree mode for
-   this command: every check here needs a pull request to exist.
+   nothing, say that `/cloudaeye:check` takes a pull-request number
+   (`/cloudaeye:check #405`) and ask which pull request — do **not** guess from
+   the current branch, and do not fall back to the working tree. There is no
+   working-tree mode yet: every check here needs a pull request to exist.
 
    No diff is uploaded and no `git diff` is run. The server fetches the pull
    request itself, so nothing leaves the machine except the repository identity

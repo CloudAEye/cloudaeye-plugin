@@ -40,7 +40,7 @@ for "does my change satisfy this ticket" use `/cloudaeye:check-task`.
 
 ## The answer comes back here
 
-Unlike `/cloudaeye:check-pr`, `/cloudaeye:add-docs` and `/cloudaeye:add-tests`,
+Unlike `/cloudaeye:check`, `/cloudaeye:add-docs` and `/cloudaeye:add-tests`,
 this one does not send the user somewhere else to read the result. The analysis
 is in the `context` field. Print it.
 

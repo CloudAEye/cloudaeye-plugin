@@ -1,7 +1,7 @@
 ---
 name: add-tests
 description: Have CloudAEye write unit tests for the uncovered code in an open pull request and post them on the pull request as one-click review suggestions, new test files included. It writes on the PR; it never edits your working tree.
-when_to_use: Use when the user asks for tests for a pull request, or to fix the unit test coverage a /cloudaeye:check-pr run reported. Needs an open pull request — there is no working-tree mode.
+when_to_use: Use when the user asks for tests for a pull request, or to fix the unit test coverage a /cloudaeye:check run reported. Needs an open pull request — there is no working-tree mode.
 argument-hint: "<PR number, e.g. 405 or #405>"
 allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__add_tests", "mcp__cloudaeye__add_tests"]
 ---
@@ -147,7 +147,7 @@ Do not proceed until this gate reports `ready` or `initialized`.
 
 6. Stop there. Do not offer to apply the suggestions, do not fetch them, and do
    not start a review of the pull request. If the user wants one, that is
-   `/cloudaeye:check-pr` or `/cloudaeye:review`.
+   `/cloudaeye:check` or `/cloudaeye:review`.
 
 ## Notes
 
