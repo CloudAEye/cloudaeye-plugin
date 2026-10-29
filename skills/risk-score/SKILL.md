@@ -122,9 +122,10 @@ from the repository on GitHub, and a working tree has none of them.
    it opens with a summary (the score, this PR's AI slop, the bugs and rework in
    the changed files beside the repository's rates, the recommendation and the
    next step), then what needs attention, ranked, then the author, one marked
-   line a signal with only the trends that got worse, then the code it changes:
-   its tests and a code area for each changed file with bugs (stability, bug
-   trend, regression rate, rework, ownership, recent issues). Every concern
+   line a signal with only the trends that got worse and their pull requests in
+   the window, then the code changes: its tests and a code area for each changed
+   file with bugs (stability, bug trend, regression rate, rework, ownership,
+   recent issues). Every concern
    names a file, an issue or a pull request, and what could not be measured is
    marked ⚪ with the reason rather than read as clean. Do not reorder it, round
    it, or summarise it into prose.
