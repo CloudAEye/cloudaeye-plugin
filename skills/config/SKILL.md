@@ -100,7 +100,7 @@ Run `CE show DIR` and go through its `settings` section by section, in this orde
 |---|---|---|
 | 1 | Ultrareview — checks | PR checklist (`ultrareview.checks.checklist`), Review — bugs and security (`ultrareview.checks.review`), AI slop score (`ultrareview.checks.slop`), Risk score (`ultrareview.checks.risk`), Architecture (`ultrareview.checks.architecture`), Control flow (`ultrareview.checks.control_flow`), Task check (`ultrareview.checks.task`) — on or off |
 | 2 | Ultrareview — limits | Risk score (`ultrareview.limits.risk`), AI slop score (`ultrareview.limits.slop`) — 0 to 100; Review severity (`ultrareview.limits.severity`) — medium or low |
-| 3 | Ultrareview — human reviewers | Max human reviewers to assign (`ultrareview.max_reviewers`) — 1, 2 or 3 |
+| 3 | Ultrareview — human reviewers | Assign human review (`ultrareview.assign_reviewers`) — true or false; Max human reviewers to assign (`ultrareview.max_reviewers`) — 1, 2 or 3 |
 | 4 | Ultrareview instructions | `ultrareview.instructions` — plain sentences |
 | 5 | Review | Severity floor (`review.severity_floor`) — all, critical, high, medium, low; Paths never reviewed (`review.skip`) |
 | 6 | Control flow | Effort (`control_flow.effort`) — low, medium or high; Across repositories (`control_flow.cross_repo`) — yes or no |
@@ -115,8 +115,9 @@ section means:
    nothing is approved automatically.*
 2. *Hard limits: a change above any of them is never approved automatically. Some
    findings always need a human too, such as a leaked secret or a Critical issue.*
-3. *The most people to assign when a change is not approved. One is assigned unless
-   your ultrareview instructions ask for more.*
+3. *Whether ultrareview names human reviewers when a change is not approved (true by
+   default; with false the verdict still says a human must look), and the most people
+   to assign. One is assigned unless your ultrareview instructions ask for more.*
 4. *Anything else ultrareview should follow, in plain words — for example "Pull
    requests from the Platform team need two humans: one from the team, one from
    outside it." An instruction can ask for more review, never less. Team names are

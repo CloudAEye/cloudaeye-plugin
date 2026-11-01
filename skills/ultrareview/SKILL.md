@@ -67,7 +67,8 @@ Before anything runs, print this tree for the chosen mode with each node marked
 - `assign-reviewer` is marked **only if a human review is required**: it runs
   when the verdict at the end is *requires human review*, never when the change
   is approved for merge, and only on a pull request (on uncommitted changes:
-  *skipped: needs a pull request*).
+  *skipped: needs a pull request*). With **Assign human review** false in your
+  settings it never runs (*skipped: turned off in your settings*).
 - Your settings are read in step 1. A check they turn off is not run: say once,
   *Turned off in your settings: …*, and its section in the report reads
   *skipped: turned off in your settings* (see **Your settings** below).
@@ -413,7 +414,8 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
     reports what did run — but not when the chain stopped on a pending job or a
     failed review.
 11. **Suggested reviewers — only when a human review is required.** When step
-    10's `verdict` is `review` **and** this is a pull request, call
+    10's `verdict` is `review` **and** this is a pull request **and** step 10 did
+    not return `assign_reviewers: false` (your settings turned assigning off), call
     `mcp__plugin_cloudaeye_cloudaeye__assign_reviewer` with `repo`:
     `INIT.repo_full`, `pr_number`, `require_owners: false`, `count`: step 10's
     `reviewers`, and `note`: step 10's `reviewer_note` when there is one. It answers
@@ -503,8 +505,8 @@ all is a human review, never an approval. If step 10 did not answer, write
 **Your settings** — when step 10 returned `settings`: one line, *Decided with your
 settings* (the files in `SETTINGS.applied`, and *as on <target>* on a pull request)*:*
 the hard limits (risk *n*/100, AI slop *n*/100, review severity), the most human
-reviewers to assign (`max_reviewers`) and the checks turned off, as `settings` gives
-them. Under it, each of `instructions` — the instruction in quotes, *applied* or *not
+reviewers to assign (`max_reviewers`, or *assigning turned off* when `settings` has
+`assign_reviewers: false`) and the checks turned off, as `settings` gives them. Under it, each of `instructions` — the instruction in quotes, *applied* or *not
 applied*, and its `why` — then, when step 10 returned `reviewers_capped`, *an
 instruction asked for <asked> reviewers; your settings assign at most <max>*, and each
 of `policy_problems` (a setting that was left out). Never print this block when there
@@ -512,6 +514,8 @@ were no settings.
 
 **Suggested reviewers** — only under *requires human review*:
 
+- Assigning turned off (step 10 returned `assign_reviewers: false`): one line,
+  *Not assigned — assigning human reviewers is turned off in your settings.*
 - Pull request, step 11 ran: the people in `recommended` — step 10's `reviewers`
   of them, in order — as `name` (`login`) — `role`, taken from `candidates`, never
   @-mentioned (a mention notifies them). When fewer were found than asked for,

@@ -54,7 +54,7 @@ class Setting:
     section: str
     group: str            # the ### heading it sits under; "" for a section with none
     label: str            # the text before ":"; "" for free lines (instructions)
-    kind: str             # onoff | yesno | choice | score | number | text | list | lines
+    kind: str             # onoff | yesno | truefalse | choice | score | number | text | list | lines
     options: tuple = ()
     lo: int = 0
     hi: int = 0
@@ -72,6 +72,7 @@ SETTINGS = (
     Setting("ultrareview.limits.risk", "Ultrareview", "Limits", "Risk score", "score"),
     Setting("ultrareview.limits.slop", "Ultrareview", "Limits", "AI slop score", "score"),
     Setting("ultrareview.limits.severity", "Ultrareview", "Limits", "Review severity", "choice", ("medium", "low")),
+    Setting("ultrareview.assign_reviewers", "Ultrareview", "Human reviewers", "Assign human review", "truefalse"),
     Setting("ultrareview.max_reviewers", "Ultrareview", "Human reviewers", "Max human reviewers to assign",
             "choice", ("1", "2", "3")),
     Setting("ultrareview.instructions", "Ultrareview", "Ultrareview instructions", "", "lines"),
@@ -238,12 +239,13 @@ def value_of(s: Setting, raw: str):
     """The value as the other skills use it, or ``ConfigError`` naming the options."""
     text = raw.strip()
     low = text.lower()
-    if s.kind in ("onoff", "yesno"):
+    if s.kind in ("onoff", "yesno", "truefalse"):
         if low in ON:
             return True
         if low in OFF:
             return False
-        raise ConfigError(f"{s.label}: {text!r} is not {'on or off' if s.kind == 'onoff' else 'yes or no'}")
+        pair = {"onoff": "on or off", "yesno": "yes or no", "truefalse": "true or false"}[s.kind]
+        raise ConfigError(f"{s.label}: {text!r} is not {pair}")
     if s.kind == "choice":
         if low not in s.options:
             raise ConfigError(f"{s.label}: {text!r} is not one of {' | '.join(s.options)}")
@@ -414,7 +416,7 @@ def merge(per_file: list[dict]) -> dict:
         got = [values.get(key) for values in per_file]
         known = [v for v in got if v is not None]
         s = BY_KEY[key]
-        if s.kind in ("onoff", "yesno"):
+        if s.kind in ("onoff", "yesno", "truefalse"):
             # off only when every changed file's settings turn it off; on is CloudAEye's default
             if all(v is False for v in got):
                 out[key] = False
@@ -480,7 +482,7 @@ def show(root: Path, directory: str) -> dict:
             "key": s.key, "section": s.section, "group": s.group, "label": s.label or s.group,
             "kind": s.kind, "options": list(s.options) or (
                 ["on", "off"] if s.kind == "onoff" else ["yes", "no"] if s.kind == "yesno" else
-                ["0-100"] if s.kind == "score" else [f"{s.lo}-{s.hi}"] if s.kind == "number" else []),
+                ["true", "false"] if s.kind == "truefalse" else ["0-100"] if s.kind == "score" else [f"{s.lo}-{s.hi}"] if s.kind == "number" else []),
             "value": mine.get(s.key),
             "inherited": from_,
             "inherited_from": ((where[s.key] + "/") if where.get(s.key) else "the root") if from_ is not None
@@ -535,6 +537,8 @@ def _render(s: Setting, value) -> str:
         return "on" if value else "off"
     if s.kind == "yesno":
         return "yes" if value else "no"
+    if s.kind == "truefalse":
+        return "true" if value else "false"
     if s.kind == "score":
         return f"{value}/100"
     return str(value)

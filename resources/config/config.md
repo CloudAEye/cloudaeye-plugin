@@ -29,8 +29,11 @@
 <!-- - Review severity: medium | low -->
 
 ### Human reviewers
-<!-- The most humans to assign when a change is not approved: 1 | 2 | 3.
-     One is assigned unless your ultrareview instructions ask for more. -->
+<!-- Assign human review: true | false. With false, ultrareview names no reviewers;
+     the verdict still says when a human must look.
+     Max human reviewers to assign: 1 | 2 | 3. One is assigned unless your ultrareview
+     instructions ask for more. -->
+<!-- - Assign human review: true -->
 <!-- - Max human reviewers to assign: 2 -->
 
 ### Ultrareview instructions

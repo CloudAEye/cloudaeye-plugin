@@ -128,6 +128,15 @@ def test_across_a_change_the_value_that_asks_for_more_review_wins(repo):
     assert "checks" not in both["ultrareview"], "a check stays on unless every changed file's settings turn it off"
 
 
+def test_assigning_human_review_is_off_only_when_every_changed_files_settings_say_so(repo):
+    ce(repo, "set", "--dir", "docs", "ultrareview.assign_reviewers=false")
+    assert "- Assign human review: false" in (repo / "docs" / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert ce_json(repo, "effective", "--", "docs/guide/b.md")["ultrareview"] == {"assign_reviewers": False}
+    both = ce_json(repo, "effective", "--", "docs/guide/b.md", "src/a.py")
+    assert "ultrareview" not in both, "true is the default; one file still wanting a reviewer keeps it"
+    assert "error" in ce_json(repo, "set", "ultrareview.assign_reviewers=maybe")
+
+
 def test_triage_reads_the_top_level_file_only(repo):
     assert "error" in ce_json(repo, "set", "--dir", "docs", "triage.okrs=`docs/okrs.md`")
     ce(repo, "set", "triage.okrs=`docs/okrs.md`")
