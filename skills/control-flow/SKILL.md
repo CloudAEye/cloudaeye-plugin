@@ -141,10 +141,14 @@ prompt for a key.
    [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
    git add --intent-to-add . >/dev/null 2>&1
    git diff "$BASE" > .cloudaeye/session/session.diff
+   git diff --name-only "$BASE" > "$CE_TMP/files.txt"
    UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
      -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
    echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$(git diff --name-only "$BASE" | wc -l) upload_http=$UP"
+   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$(wc -l < "$CE_TMP/files.txt") upload_http=$UP"
+   echo "settings:"
+   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+   if [ -n "$PY" ]; then "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
    ```
 
    Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -160,25 +164,51 @@ prompt for a key.
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
    **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
-2. Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
-   skill's frontmatter) with `session_id` from step 1. Leave `depth`, `label`
-   and `cross_repo` at their defaults unless the user asks otherwise — the tool
-   docstring explains each. Two arguments need a decision:
+2. Your settings — the `.cloudaeye.config` files in the repository that cover this
+   change's files (`/cloudaeye:config` writes them). On the working tree, step 1
+   printed them after `settings:`. On a pull request, read them as its target branch
+   has them, in one Bash call — `pull_request.base` as `BASE_BRANCH`, and each of
+   `pull_request.files` in single quotes after `--`:
+
+   ```bash
+   cd "$(git rev-parse --show-toplevel)" || exit 1
+   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+   [ -n "$PY" ] || { echo '{"error": "python was not found"}'; exit 0; }
+   BASE_BRANCH='<pull_request.base>'
+   case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo '{"error": "the target branch is unknown"}'; exit 0;; esac
+   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
+   ```
+
+   `control_flow.depth` and `control_flow.cross_repo` in them are your defaults;
+   what the user asks for in this run wins. Print each of `problems` once. An
+   `error` means use CloudAEye's defaults.
+
+   Then call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
+   skill's frontmatter) with `session_id` from step 1, `depth` and `cross_repo`
+   when the user or the settings give them, and `label` at its default — the tool
+   docstring explains each. Two more arguments:
 
    - `context`: pass `{"scope_path": "<path>"}` only when the user scoped the
      run to a directory.
-   - `post`: **writes a comment where other people can see it.** Pass `true`
-     only after saying in one line what will happen — *CloudAEye will post the
-     control-flow card as a comment on pull request #<n>* — and getting a clear
-     yes. Naming a PR in the argument is asking for a diagram of it, not asking
-     to comment on it. Needs a session opened with a `pr_number`.
+   - `post`: on a **pull request**, always `true` — the card goes on the pull
+     request as a comment, as every CloudAEye command posts on a pull request,
+     and a card already there for this commit is not posted again
+     (`posted.already_posted`). On the working tree, `false`: there is nothing to
+     post on.
 
 3. Resolve the response using **Queued Result** above, including its
    synchronous rollout fallback and bounded polling deadline. Keep the same
    job ID throughout; never call `control_flow` again to check progress. Do not
    continue below until a usable original response has been obtained.
 
-4. Print the resolved response's `card` **verbatim, every mermaid fence included**, then stop.
+4. **On a pull request:** the card is on the pull request. Print a short summary —
+   the card's opening line ("This code change …") as written, and the calls added,
+   removed and moved — then *Posted on the pull request:* with `posted.url` (or the
+   pull request's link when there is none), *already there for this commit* when
+   `posted.already_posted`, or the delivery `status` and `note` when it is not `ok`.
+   Offer to print the whole card here, then stop.
+
+   **On the working tree:** print the resolved response's `card` **verbatim, every mermaid fence included**, then stop.
 
    The fence is standard mermaid and stays mermaid: it is the same block that
    gets posted on the pull request, so what the developer reads here must be

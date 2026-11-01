@@ -68,6 +68,9 @@ Before anything runs, print this tree for the chosen mode with each node marked
   when the verdict at the end is *requires human review*, never when the change
   is approved for merge, and only on a pull request (on uncommitted changes:
   *skipped: needs a pull request*).
+- Your settings are read in step 1. A check they turn off is not run: say once,
+  *Turned off in your settings: …*, and its section in the report reads
+  *skipped: turned off in your settings* (see **Your settings** below).
 
 In pull-request mode, say once under the tree: *the report is posted on the
 pull request as one comment, as the other commands post their cards, and
@@ -155,6 +158,40 @@ fi
 
 Do not start a session until this gate reports `ready` or `initialized`.
 
+### Your settings
+
+The team's settings are `.cloudaeye.config` and `.cloudaeye.rules` files in the
+repository (`/cloudaeye:config` writes them): one at the root, and any in a directory
+cover that directory and below. Step 1 reads the ones that apply to this change's
+files — from the working tree before a commit, from the pull request's **target
+branch** on a pull request, so a pull request cannot change its own settings — and
+prints them as JSON after `settings:`. Keep that JSON as `SETTINGS`. With no files it
+holds only empty `rules` and changes nothing. `error` means they could not be read:
+say so in one line and run on CloudAEye's defaults. Say once, a line each:
+
+- `applied` — the files that decided this run (*Using your settings from
+  `.cloudaeye.config` and `services/payments/.cloudaeye.config`*);
+- each of `problems` — a line a file could not read, whose default stands;
+- `pending` (pull requests only) — *This pull request changes <files>; CloudAEye uses
+  them once they are merged into <target>*;
+- `fetched: false` — *<target> could not be fetched; read from your last copy of it*.
+
+What they decide:
+
+- **`SETTINGS.ultrareview.checks`** — a check set to `false` is not run: skip its
+  step below. Review, AI slop and risk are what an approval rests on: with any of
+  them off, the verdict is a human review.
+- **`SETTINGS.ultrareview`** — the checks, limits, reviewers and instructions — goes
+  whole, as it is, as `policy` to `review_summary` (steps 10 and 12). Leave `policy`
+  out when it is absent.
+- **`SETTINGS.rules`** — the team's review rules — go as `rules` to the review
+  (step 2) when there are any.
+- **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
+  commit only; on a pull request the server reads the whole pull request.
+- **`SETTINGS.control_flow`** — `depth` and `cross_repo` for step 7.
+- **`SETTINGS.review.severity_floor` is not used here**: the AI slop score cannot
+  reuse a review run with a floor, and would pay for its own.
+
 ### 1. One session, one upload
 
 Every step below uses **this one session**. Never call `start_session` again
@@ -180,7 +217,19 @@ skip the upload below; the server fetched the diff itself. On `status: error`,
 print the `error` as written and stop: it is the eligibility refusal (closed,
 wrong base branch, fork, over 50 files), and each names a different thing to
 do. Never review the working tree instead. On success, say which pull request
-this is (number, title, head SHA) and whether it is a draft.
+this is (number, title, head SHA) and whether it is a draft. Then read your
+settings as the target branch has them, in one Bash call — `pull_request.base`
+as `BASE_BRANCH`, and each of `pull_request.files` in single quotes after `--`:
+
+```bash
+cd "$(git rev-parse --show-toplevel)" || exit 1
+for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+[ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
+BASE_BRANCH='<pull_request.base>'
+case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
+echo "settings:"
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
+```
 
 **Working-tree and path modes only, to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
 
@@ -191,6 +240,9 @@ CE_UPLOAD_TOKEN='<upload_token>'
 TARGET='<validated target_branch or empty>'
 SCOPE='<the path the user gave, or empty for the whole change>'
 cd "$(git rev-parse --show-toplevel)" || exit 1
+for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+CFG="${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py"
+SKIP=$([ -n "$PY" ] && "$PY" "$CFG" skip 2>/dev/null)
 case "$SCOPE" in *..*|/*|~*|[A-Za-z]:*) echo "cloudaeye_error=scope_outside_repo"; exit 1;; esac
 case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
 case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
@@ -211,19 +263,20 @@ if [ -n "$TARGET" ]; then
 fi
 [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
 git add --intent-to-add . >/dev/null 2>&1
-if [ -n "$SCOPE" ]; then
-  git diff "$BASE" -- "$SCOPE" > .cloudaeye/session/session.diff
-  SCOPED=$(git diff --name-only "$BASE" -- "$SCOPE" | wc -l)
-else
-  git diff "$BASE" > .cloudaeye/session/session.diff
-  SCOPED=$(git diff --name-only "$BASE" | wc -l)
-fi
+PATHS=("${SCOPE:-.}"); SKIPPED=0
+while IFS= read -r p; do case "$p" in ''|*..*|/*|~*) ;; *) PATHS+=(":(exclude)$p");; esac; done <<< "$SKIP"
+git diff "$BASE" -- "${PATHS[@]}" > .cloudaeye/session/session.diff
+git diff --name-only "$BASE" -- "${PATHS[@]}" > "$CE_TMP/files.txt"
+SCOPED=$(wc -l < "$CE_TMP/files.txt")
+[ -n "$SKIP" ] && SKIPPED=$(( $(git diff --name-only "$BASE" -- "${SCOPE:-.}" | wc -l) - SCOPED ))
 TOTAL=$(git diff --name-only "$BASE" | wc -l)
 UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o "$CE_TMP/upload.json" -w '%{http_code}' \
   -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
 SAME=$(grep -o '"diff_unchanged": *\(true\|false\)' "$CE_TMP/upload.json" 2>/dev/null | grep -o 'true\|false' || echo unknown)
 echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} upload_http=$UP diff_unchanged=$SAME"
+echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP diff_unchanged=$SAME"
+echo "settings:"
+if [ -n "$PY" ]; then "$PY" "$CFG" effective --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
 ```
 
 Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -235,6 +288,8 @@ Read the two summary lines and the `start_session` result; don't re-derive them:
 | `diff_bytes=0`, `scope=-` | Nothing pending — report "nothing to review" and stop. |
 | `diff_bytes=0` with a scope | Nothing has changed under that path. Say so **naming the path**, and stop. Never widen to the whole change. |
 | `diff_files` below `total_files` | A scoped run. Report both — "reviewed 2 of 7 changed files (src/auth/)" — and say the cross-file checks cannot see the excluded files. Every verdict below means *for that path*. |
+| `skipped_by_settings` above `0` | Your settings left that many changed files out (`SETTINGS.review.skip`). Say so, naming the patterns, and pass the label below as `scope_path`. |
+| `settings:` | `SETTINGS` — see **Your settings** above. |
 | `cloudaeye_error=scope_outside_repo` | The path escaped the repository. Report it and stop. |
 | `base_source=fork_point` | Correct baseline. Name the branch and `base_age`. |
 | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim; never quote `target_branch_error`. |
@@ -275,7 +330,11 @@ or `review: reused — request_changes, 7 findings` when the response carries
 `cached: true` (`reused: true` for the checklist) — and nothing more. The full
 report is printed once, at the end.
 
-1. **Start the checklist** (pull-request mode). Call
+**Scope label.** In path mode, `context` below is `{"scope_path": "<path>"}`. When
+your settings left files out, the label says so too: `"<path, or the whole change>
+except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
+
+1. **Start the checklist** (pull-request mode, unless turned off). Call
    `mcp__plugin_cloudaeye_cloudaeye__check_pr` with `repo`: `INIT.repo_full`,
    `pr_number`, `wait_seconds: 1` and `detail: true` (the full report, coverage
    by function included, comes back in `report`). It runs on the hosted service beside the
@@ -285,17 +344,19 @@ report is printed once, at the end.
    `reused: true` means it already ran at this commit — nothing was billed or
    posted again, its report is already on the pull request, and step 4 is
    skipped.
-2. **The review.** Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff` with
+2. **The review** (unless turned off; then skip this step and step 9 — the AI
+   slop score runs its own pass). Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff` with
    `session_id`, `intent`, `profile: "review"`, `min_severity` and the model
-   options only when given, and `context`: `{"scope_path": "<path>"}` in path
-   mode. Never pass `review_config` or `report_types`.
+   options only when given, `rules`: `SETTINGS.rules` when there are any, and
+   `context` (the scope label). Never pass `review_config` or `report_types`.
+   `rules_problems` in the answer names rules left out; say so in the Review section.
    **If it returns verdict `error` or a `degraded` block, the run failed:**
    every later step reads the same staged source. Still collect the checklist
    if one was started (step 4) — it is already paid for — then report the
    failure (`degraded.cause`, `context_refresh` verbatim) and stop. Never call
    it clean.
-3. **The AI slop score.** Call `mcp__plugin_cloudaeye_cloudaeye__slop_score`
-   with `session_id` and `context` (`scope_path` in path mode). Never
+3. **The AI slop score** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__slop_score`
+   with `session_id` and `context` (the scope label). Never
    `run_review: false`. It reuses what the review just computed.
 4. **Collect the checklist** (pull-request mode, when step 1 returned a
    `review_id`). Call `check_pr` with `repo`, `pr_number`, that `review_id`
@@ -303,7 +364,7 @@ report is printed once, at the end.
    three calls in all; if it is still pending, keep the `review_id` for the
    Check section and say risk may measure coverage on its own. Collecting it is
    what posts it, and risk reads its unit-test coverage from that comment.
-5. **Change risk** (every mode). Call
+5. **Change risk** (every mode, unless turned off). Call
    `mcp__plugin_cloudaeye_cloudaeye__change_risk` with `session_id` and
    `post: false`. It reads the slop score, the checklist's coverage and the
    review's Critical findings instead of measuring them again. A slop score
@@ -320,12 +381,12 @@ report is printed once, at the end.
    `<id>+<name>@users.noreply.github.com` email; omit it when neither gives one
    (the server tries your sign-in). There is no checklist there, so coverage is
    reported as not measured, and the card is never posted.
-6. **Architecture.** Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` with
-   `session_id`, `post: false`, and `context` (`scope_path` in path mode).
-7. **Control flow.** Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` with
-   `session_id`, `post: false`, and `context` (`scope_path` in path mode).
-   Leave `depth`, `label` and `cross_repo` at their defaults.
-8. **Task** (working-tree and path modes, with `task:`). Call
+6. **Architecture** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` with
+   `session_id`, `post: false`, and `context` (the scope label).
+7. **Control flow** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` with
+   `session_id`, `post: false`, and `context` (the scope label), plus `depth` and
+   `cross_repo` from `SETTINGS.control_flow` when set. Leave `label` at its default.
+8. **Task** (working-tree and path modes, with `task:`, unless turned off). Call
    `mcp__plugin_cloudaeye_cloudaeye__check_task` with `session_id`,
    `task_description`, `task_source` and the **same** `intent`.
 9. **Hand the fix list back to the review.** Repeat step 2's call with
@@ -334,19 +395,27 @@ report is printed once, at the end.
    Review section's numbers — the slop and architecture steps each saved a
    numbered list of their own after it. Do not print its result.
 10. **The verdict, the results and what to do next.** Call
-    `mcp__plugin_cloudaeye_cloudaeye__review_summary` with `session_id` only.
+    `mcp__plugin_cloudaeye_cloudaeye__review_summary` with `session_id`,
+    `policy`: `SETTINGS.ultrareview` when present, and — on the working tree or a
+    path — `author`: the login step 5's two commands found (run them here when risk
+    was turned off).
     It reads every result stored above and returns the report's top: `headline`
     (approved for merge, or requires human review), `verdict` (`approve` or
-    `review`), `reasons`, the `results` table and the `summary` of next steps.
-    It runs no review. Call it even when a step after the review failed — it
+    `review`), `reasons`, the `results` table and the `summary` of next steps;
+    under `review`, `reviewers` (how many people) and `reviewer_note` (who they
+    should be, from your instructions). With settings it also returns `settings`
+    (what was applied), `instructions` (each applied or not, and why) and
+    `policy_problems`. It runs no review and decides by rule: your instructions can
+    only ask for more review. Call it even when a step after the review failed — it
     reports what did run — but not when the chain stopped on a pending job or a
     failed review.
 11. **Suggested reviewers — only when a human review is required.** When step
     10's `verdict` is `review` **and** this is a pull request, call
     `mcp__plugin_cloudaeye_cloudaeye__assign_reviewer` with `repo`:
-    `INIT.repo_full`, `pr_number` and `require_owners: false`. It answers
-    directly (no job) and requests nothing. Keep its `card` and its first two
-    `candidates` by `rank`; the server keeps the same suggestion for the pull
+    `INIT.repo_full`, `pr_number`, `require_owners: false`, `count`: step 10's
+    `reviewers`, and `note`: step 10's `reviewer_note` when there is one. It answers
+    directly (no job) and requests nothing. Keep its `card` and the people in
+    `recommended`; the server keeps the same suggestion for the pull
     request comment, so nothing is passed on. Never call it when the verdict is
     `approve`, and never with `apply: true` — a review request notifies people,
     and only the user asks for that. An error goes into the reviewers line and
@@ -355,7 +424,8 @@ report is printed once, at the end.
 12. **Post the report — always, in pull-request mode.** A PR number means the
     report goes on the pull request as a GitHub comment, like every other
     command's card. Once step 10 has answered — and step 11, when it ran —
-    call `review_summary` again with `session_id` and `post: true`. The
+    call `review_summary` again with `session_id`, `post: true` and the **same**
+    `policy` and `author` as step 10. The
     comment's suggested reviewers, and their card collapsed under them, come
     from step 11's call at this commit. Do this whatever the verdict,
     even when `summary` is empty or a step after the review failed — the
@@ -427,10 +497,20 @@ soften it: it is decided by rule from what was stored, and no risk verdict at
 all is a human review, never an approval. If step 10 did not answer, write
 *No verdict:* and why, and write neither headline yourself.
 
+**Your settings** — when step 10 returned `settings`: one line, *Decided with your
+settings* (the files in `SETTINGS.applied`, and *as on <target>* on a pull request)*:*
+the limits (risk *n*/100, AI slop *n*/100, review severity), the reviewer count and
+the checks turned off, as `settings` gives them. Under it, each of
+`instructions` — the instruction in quotes, *applied* or *not applied*, and its `why`
+— and each of `policy_problems` (a setting that was left out). Never print this block
+when there were no settings.
+
 **Suggested reviewers** — only under *requires human review*:
 
-- Pull request, step 11 ran: the first two `candidates` as `name` (`login`) —
-  `role`, from its response, never @-mentioned (a mention notifies them). Add
+- Pull request, step 11 ran: the people in `recommended` — step 10's `reviewers`
+  of them, in order — as `name` (`login`) — `role`, taken from `candidates`, never
+  @-mentioned (a mention notifies them). When fewer were found than asked for,
+  say how many were. Add
   one line: *a suggestion — no review has been requested;
   `/cloudaeye:assign-reviewer #<n>` asks for them when you want it.* Then,
   right under it in the Summary, a small collapsible
@@ -450,8 +530,8 @@ criterion is always there — AI slop score, Risk score, Bugs, Security, PR
 checklist, Unit test coverage, Architecture, Control flow, Task. One this run
 cannot have reads *not applicable* and why (the checklist before a pull
 request, a task nobody named); one that should have run and did not reads
-*not run*. Neither is a pass, and the two are different: never write one for
-the other. Never add, drop, merge or recompute a row. Under the table, one line says what this
+*not run*; one your settings switched off reads *turned off in your settings*.
+None is a pass, and they are different: never write one for another. Never add, drop, merge or recompute a row. Under the table, one line says what this
 run paid for: *Ran now: … · Reused from earlier runs on this change: …* (or
 *Everything was reused — nothing ran again* when every step was). Risk is
 re-read each time: it runs no AI once the slop score and the checklist are
@@ -596,6 +676,9 @@ Rules for every card:
   uncommitted changes or a path nothing is posted.
 - **Reviewers are suggested, never requested.** `assign_reviewer` runs only when
   the verdict is *requires human review*, and never with `apply`.
+- **Your settings decide by rule, and only toward more review.** The limits and the
+  checks are compared by the server; your instructions are read by a model that may
+  only ask for more review or more reviewers. Change them with `/cloudaeye:config`.
 - **Working tree is pre-commit:** the diff is `git diff` against the fork point.
   A pull-request run is its own session and never overwrites unfinished local
   work; `/cloudaeye:implement` does not apply to it.

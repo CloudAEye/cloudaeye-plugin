@@ -167,23 +167,27 @@ prompt for a key.
    - `context`: pass `{"scope_path": "<path>"}` only when the user scoped the
      run to a directory; pass `{"pr_title": "<title>"}` when the user gave one
      and the session is not a pull-request session (a PR session carries it).
-   - `post`: **writes a comment where other people can see it.** Pass `true`
-     only after saying in one line what will happen — *CloudAEye will post the
-     architecture review as a comment on pull request #<n>* — and getting a
-     clear yes. Naming a PR in the argument is asking for a review of it, not
-     asking to comment on it. Needs a session opened with a `pr_number`. The
-     comment is the same review drawn for GitHub — the pictures with brand
-     icons and a legend under each, the findings and questions as tables, the
-     repository section collapsed, and this card itself in a collapsed section
-     at the end — so there is nothing to describe in chat beyond whether it
-     landed.
+   - `post`: on a **pull request**, always `true` — the review goes on the pull
+     request as a comment, as every CloudAEye command posts on a pull request,
+     and one already there for this commit is not posted again
+     (`posted.already_posted`). On the working tree, `false`. The comment is the
+     same review drawn for GitHub — the pictures with brand icons and a legend
+     under each, the findings and questions as tables, the repository section
+     collapsed, and this card itself in a collapsed section at the end.
 
 3. Resolve the response using **Queued Result** above, including its
    synchronous rollout fallback and bounded polling deadline. Keep the same
    job ID throughout; never call `review_arch` again to check progress. Do not
    continue below until a usable original response has been obtained.
 
-4. Print the resolved response's `card` **verbatim, every mermaid fence included**, then
+4. **On a pull request:** the review is on the pull request. Print a short summary —
+   the `verdict`, the layers the change touched and the findings by severity, as
+   the card's first lines give them — then *Posted on the pull request:* with
+   `posted.url` (or the pull request's link when there is none), *already there for
+   this commit* when `posted.already_posted`, or the delivery `status` and `note`
+   when it is not `ok`. Offer to print the whole card here, then stop.
+
+   **On the working tree:** print the resolved response's `card` **verbatim, every mermaid fence included**, then
    stop.
 
    The card is rendered server-side because what it may show is the feature.

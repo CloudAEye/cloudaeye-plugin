@@ -172,6 +172,22 @@ fi
 Do not start a session until this gate reports `ready` or `initialized`.
 
 
+### Your settings
+
+The team's settings are `.cloudaeye.config` and `.cloudaeye.rules` files in the
+repository (`/cloudaeye:config` writes them); one in a directory covers that directory
+and below. Step 1 reads the ones that apply to this change's files — from the working
+tree before a commit, from the target branch on a pull request — and prints them as
+JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without them
+(say so in one line). Print each of `problems` once, and on a pull request `pending`
+(*this pull request changes <files>; they apply once merged*). Three apply here:
+
+- **`SETTINGS.review.severity_floor`** — the floor when the user gave no severity flag
+  (`all` means none). A flag always wins.
+- **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
+  commit only; on a pull request the server reads the whole pull request.
+- **`SETTINGS.rules`** — your team's review rules, passed as `rules` (step 3).
+
 1. Prepare and upload the review session.
 
    First collect the current local branch and HEAD with one Bash call.
@@ -194,7 +210,17 @@ Do not start a session until this gate reports `ready` or `initialized`.
 
    On `status: error` in this mode, print the `error` field as written and stop. It is the eligibility refusal — closed pull request, wrong base branch, fork, or over the 50-file limit — and each names a different thing to do. Do not paraphrase it into "the PR could not be reviewed", and do not review the working tree instead.
 
-   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible.
+   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible. Then read your settings as the target branch has them, in one Bash call — `pull_request.base` as `BASE_BRANCH`, and each of `pull_request.files` in single quotes after `--`:
+
+   ```bash
+   cd "$(git rev-parse --show-toplevel)" || exit 1
+   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+   [ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
+   BASE_BRANCH='<pull_request.base>'
+   case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
+   echo "settings:"
+   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
+   ```
 
    **Working-tree and path modes only, from here to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
 
@@ -205,6 +231,9 @@ Do not start a session until this gate reports `ready` or `initialized`.
    TARGET='<validated target_branch or empty>'
    SCOPE='<the path the user gave, or empty for the whole change>'
    cd "$(git rev-parse --show-toplevel)" || exit 1
+   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+   CFG="${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py"
+   SKIP=$([ -n "$PY" ] && "$PY" "$CFG" skip 2>/dev/null)
    case "$SCOPE" in *..*|/*|~*|[A-Za-z]:*) echo "cloudaeye_error=scope_outside_repo"; exit 1;; esac
    case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
    case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
@@ -225,18 +254,19 @@ Do not start a session until this gate reports `ready` or `initialized`.
    fi
    [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
    git add --intent-to-add . >/dev/null 2>&1
-   if [ -n "$SCOPE" ]; then
-     git diff "$BASE" -- "$SCOPE" > .cloudaeye/session/session.diff
-     SCOPED=$(git diff --name-only "$BASE" -- "$SCOPE" | wc -l)
-   else
-     git diff "$BASE" > .cloudaeye/session/session.diff
-     SCOPED=$(git diff --name-only "$BASE" | wc -l)
-   fi
+   PATHS=("${SCOPE:-.}"); SKIPPED=0
+   while IFS= read -r p; do case "$p" in ''|*..*|/*|~*) ;; *) PATHS+=(":(exclude)$p");; esac; done <<< "$SKIP"
+   git diff "$BASE" -- "${PATHS[@]}" > .cloudaeye/session/session.diff
+   git diff --name-only "$BASE" -- "${PATHS[@]}" > "$CE_TMP/files.txt"
+   SCOPED=$(wc -l < "$CE_TMP/files.txt")
+   [ -n "$SKIP" ] && SKIPPED=$(( $(git diff --name-only "$BASE" -- "${SCOPE:-.}" | wc -l) - SCOPED ))
    TOTAL=$(git diff --name-only "$BASE" | wc -l)
    UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
      -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
    echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} upload_http=$UP"
+   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP"
+   echo "settings:"
+   if [ -n "$PY" ]; then "$PY" "$CFG" effective --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
    ```
 
    Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -249,6 +279,8 @@ Do not start a session until this gate reports `ready` or `initialized`.
    | `diff_bytes=0`, `scope=-` | Nothing pending — report "nothing to review" and stop. |
    | `diff_bytes=0` with a scope | Nothing has changed under that path. Say so **naming the path**, and stop. Do not widen to the whole change — they asked about one place. |
    | `diff_files` below `total_files` | A scoped review. Report both — "reviewed 2 of 7 changed files (src/auth/)" — and say the cross-file checks cannot see the excluded ones. `approve` here means approve *for that path*, and nothing else in the output says so. |
+   | `skipped_by_settings` above `0` | Your settings left that many changed files out. Say so, naming the patterns; the scope label in step 3 records it. |
+   | `settings:` | `SETTINGS` — see **Your settings** above. |
    | `cloudaeye_error=scope_outside_repo` | The path escaped the repository (`..`, absolute, or `~`). Report it and stop. |
    | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim — that is the actionable form. Do **not** quote `target_branch_error`: it names an internal record ("no datastore credentials for tenant 99") and tells the user nothing they can act on. |
@@ -265,7 +297,9 @@ Do not start a session until this gate reports `ready` or `initialized`.
    - `session_id`: the `session_id` printed by step 1
    - `intent`: the summary from step 2
    - `profile`: `"security"` — **always this value from this skill.**
-   - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Omit it entirely otherwise; do not default to a floor the user did not ask for.
+   - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Without a flag, `SETTINGS.review.severity_floor` when it is set and not `all`, and say once that the floor came from your settings. Omit it otherwise; never default to a floor nobody asked for.
+   - `rules`: `SETTINGS.rules` when there are any — each `{id, text, paths}` as given. `rules_problems` in the answer names any left out; say so.
+   - Scope label: when your settings left files out, `context.scope_path` is `"<the path, or the whole change> except <the patterns, comma-separated>"`.
    - `review_model`, `model_provider`, `invert_model`: only when explicitly supplied, using the mappings in **Model options** above. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title`. Do not pass `review_config` or `report_types`; they override the profile and are how you accidentally ship a half-configured security pass.
 

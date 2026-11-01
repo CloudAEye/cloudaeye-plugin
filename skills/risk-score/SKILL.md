@@ -167,15 +167,13 @@ which needs a pull request), and **nothing can be posted**.
 
 2. Call `change_risk` with `session_id`, `days` when the user gave one, and on
    the working tree `author: AUTHOR` (omit it when empty). Follow **Queued
-   Result** above, then read `result`. One argument writes, and it needs a
-   decision:
+   Result** above, then read `result`. One argument writes:
 
-   - `post` (**pull request only**): **writes the card on the pull request**,
-     where reviewers see it (editing CloudAEye's earlier risk card there rather
-     than adding a second). Pass `true` only after saying in one line —
-     *CloudAEye will post the risk card on pull request #<n>* — and getting a
-     clear yes. Never pass it on the working tree: there is nothing to post on,
-     and the server refuses it.
+   - `post`: on a **pull request**, always `true` — the card goes on the pull
+     request, as every CloudAEye command posts on a pull request, editing
+     CloudAEye's earlier risk card there rather than adding a second. Never pass
+     it on the working tree: there is nothing to post on, and the server refuses
+     it.
 
    The assessment never writes on bug issues or Jira tickets. Where each bug is
    in the code (its files and who wrote them) is mapped in the background by
@@ -188,14 +186,19 @@ which needs a pull request), and **nothing can be posted**.
    pull request, the checklist runs for it. Neither is posted; the card's
    footnote says what was filled in.
 
-3. Print `result.card` **verbatim**. It already carries the next step, so do
-   not repeat it. On a pull request with no post requested (no `posted`), add
-   one line: *reply "post" to put it on #<n>*. Otherwise report the delivery
-   status and note; `unknown` does not establish whether the card was posted.
-   Never re-enqueue to retry a post. End with the link. On the working tree
-   (`subject: "change"`) there is no link and no post line: say once that the
-   card is about the change before it is pushed, and that running it again on
-   the pull request adds test coverage and can post the card. Then stop.
+3. **On a pull request:** the card is on the pull request. Print a short summary —
+   the risk score and band, the recommendation (`verdict`: `review` → *human review
+   required*, `approve` → *no extra review needed*) and `next_step` — then *Posted
+   on the pull request:* with `posted.url` (*updated in place* when `edited`), or
+   the delivery `status` and `note` when it is not `ok`; `unknown` does not
+   establish whether the card was posted. Never re-enqueue to retry a post. Offer
+   to print the whole card here, then stop.
+
+   **On the working tree** (`subject: "change"`): print `result.card`
+   **verbatim**. It already carries the next step, so do not repeat it. There is
+   no link and no post line: say once that the card is about the change before it
+   is pushed, and that running it again on the pull request adds test coverage and
+   posts the card. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
    it opens with a summary (the score, this PR's AI slop, the bugs and rework in

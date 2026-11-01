@@ -24,6 +24,7 @@ Code review, security checks and review intelligence in Claude Code — on your 
 | `/cloudaeye:triage-prs` | Which PR to review next across every connected repository, and why. A note like "I have half an hour" steers it. Reads only. |
 | `/cloudaeye:assign-reviewer` | Who should review an open PR, why, and what they should check. A note like "Tom is away" steers it; a review is requested only when you ask. |
 | `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
+| `/cloudaeye:config` | The team's settings, one question at a time, in a `.cloudaeye.config` at the repository's root or in any directory (it covers that directory and below): which checks ultrareview runs, the scores it may approve on its own, how many reviewers it asks for and your own instructions; the review's severity floor and skipped paths; control-flow depth; triage. Also syncs your organisation's review rules into `.cloudaeye.rules`. Commit both; pull requests read them from the target branch. |
 | `/cloudaeye:add-docs` | Generate docstrings for an open PR and post them as review suggestions. |
 | `/cloudaeye:add-tests` | Generate unit tests for an open PR and post them as review suggestions. |
 | `/cloudaeye:explain` | Explain a Jira or GitHub issue using the code it touches. |
@@ -31,7 +32,7 @@ Code review, security checks and review intelligence in Claude Code — on your 
 
 None of them edits your code. `/cloudaeye:implement` returns a plan, and Claude applies it.
 
-**What writes outside your machine:** `check` posts its report on the pull request, and `ultrareview` on a PR posts its whole report as one comment (edited in place when run again; reviewers are named, never requested); `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card only when you ask; `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue.
+**What writes outside your machine:** `check` posts its report on the pull request, and `ultrareview` on a PR posts its whole report as one comment (edited in place when run again; reviewers are named, never requested); `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card on a pull request and reply with a summary and its link (once per commit; the risk card is edited in place); `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue. `config` writes only `.cloudaeye.config` and `.cloudaeye.rules` in your working tree, and never commits them.
 
 `/cloudaeye:help inspect` prints one command's full manual. It works offline, with no sign-in.
 

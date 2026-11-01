@@ -42,13 +42,29 @@ git config user.email 2>/dev/null || true
 the form `<id>+<name>@users.noreply.github.com`. Otherwise leave `REVIEWER` empty: the
 server finds it from the user's sign-in when it can.
 
-### 3. Read the OKR document, when one was named
+### 3. Your settings
 
-A file: read it. A URL: fetch it with your own tools. Keep its text, at most 12,000
-characters, as `OKRS`. It is a preview for this run and is never stored; without it the
-team's saved OKRs are used.
+When you are in a git repository, read the Triage section of its top-level
+`.cloudaeye.config` (`/cloudaeye:config` writes it), in one Bash call:
 
-### 4. Connect this repository, for `here` and `repo` only
+```bash
+cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || { echo '{"error": "not in a git repository"}'; exit 0; }
+for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
+"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective
+```
+
+From `triage` in the answer: `okrs` (used when the user named no `okrs:`), `show`
+(how many to list) and `label` (`true`: labelling was agreed to up front, see step 8).
+An `error`, or no `triage`, means none of them apply.
+
+### 4. Read the OKR document, when one was named
+
+The `okrs:` argument, or else `triage.okrs` from your settings — a file or URL in
+backticks names a document, anything else is the text itself. A file: read it. A URL:
+fetch it with your own tools. Keep its text, at most 12,000 characters, as `OKRS`. It is
+a preview for this run and is never stored; without it the team's saved OKRs are used.
+
+### 5. Connect this repository, for `here` and `repo` only
 
 These two need the current repository. Run the bundled preflight helper and the
 session-free initialization tool, as every operational CloudAEye command does:
@@ -66,18 +82,18 @@ Use `INIT.repo_full` as `repo`. If it does not answer `ready` or `initialized`, 
 repository is not connected and suggest `/cloudaeye:init`; stop. `mine` and `all` skip
 this step: they read every repository the team connected.
 
-### 5. Call `triage_prs`
+### 6. Call `triage_prs`
 
 Pass `reviewer=REVIEWER`, `scope` (`mine`, `here`, `repo` or `all`), `repo` for `here`
-and `repo`, `note=NOTE`, `okrs=OKRS`, and `for_login` (no `@`) when the user asked for
-someone else's queue.
+and `repo`, `note=NOTE`, `okrs=OKRS`, `limit` from `triage.show` when set, and
+`for_login` (no `@`) when the user asked for someone else's queue.
 
 - `status: login_needed`: ask once — *What is your GitHub username?* — and call again
   with it as `reviewer`.
 - `status: error`: report `error` and stop.
 - `status: ok`: go on.
 
-### 6. Print `card` verbatim
+### 7. Print `card` verbatim
 
 It is rendered server-side: the pick with *Why now* and *Look at*, the rest in order,
 what is not your move yet, and what was not measured. Do not reorder, shorten or reword
@@ -94,17 +110,19 @@ the user means, ask.
 | `not_prioritised` | PRs whose code could not be read. Already on the card. |
 | `unmeasured` | What was not measured. Not measured is not low priority: say so if the user leans on it. |
 | `ai` | No AI model answered; the reasons are the facts. Say so in one line. |
-| `labelling` | When `needed` lists repositories, see step 7. |
+| `labelling` | When `needed` lists repositories, see step 8. |
 
-### 7. Offer the labelling pass, once
+### 8. Offer the labelling pass, once
 
 When `labelling.needed` is not empty and `labelling.started` is absent, ask once:
 *N repositories have no component labels yet, which makes business impact less exact.
 Label them in the background? It is a one-off AI cost per repository, billed to your
 team.* On yes, call `triage_prs` again with the same arguments and `label=true`,
-and print the new card. Never pass `label=true` without asking.
+and print the new card. Never pass `label=true` without asking — unless `triage.label`
+in your settings is `true`: then you agreed up front, so call again with `label=true`
+without asking and say in one line that your settings allowed it.
 
-### 8. End there
+### 9. End there
 
 Close with the pick's link. **Do not run the review yourself.** When the user asks to
 review the pick, it is `/cloudaeye:review #<number>` in a checkout of that repository;
