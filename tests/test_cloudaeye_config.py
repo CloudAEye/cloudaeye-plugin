@@ -228,3 +228,62 @@ def test_the_sync_replaces_its_own_rules_and_keeps_the_teams(repo):
     # an organisation that removed every rule: the synced ones go, the team's stay
     ce(repo, "sync-rules", "--file", "-", stdin=json.dumps({"status": "ok", "rules": []}))
     assert {r["text"] for r in ce_json(repo, "effective")["rules"]} == {"Our own rule."}
+
+
+# ── files people edit by hand ────────────────────────────────────────────────
+
+def test_a_byte_order_mark_and_windows_line_endings_read_like_any_file(repo, tmp_path):
+    """Notepad saves UTF-8 with a byte-order mark, which hid the first heading and with it the file."""
+    (repo / ".cloudaeye.config").write_bytes(
+        b"\xef\xbb\xbf## Ultrareview\r\n\r\n### Limits\r\n- Risk score: 40 / 100\r\n\r\n"
+        b"### Checks\r\n- Review: OFF <!-- bugs and security -->\r\n")
+    (repo / "docs" / ".cloudaeye.rules").write_bytes(b"\xef\xbb\xbf## r5\r\nSynced rule.\r\n")
+    for ref in ("", "base"):
+        if ref:
+            git(repo, "add", "-A")
+            git(repo, "-c", "core.autocrlf=false", "commit", "-qm", "crlf")
+            git(repo, "branch", "-q", "base")
+        out = ce_json(repo, "effective", *(["--ref", ref] if ref else []))
+        assert out["ultrareview"] == {"limits": {"risk": 40}, "checks": {"review": False}}, ref
+        assert out["rules"] == [{"id": "r5", "text": "Synced rule.", "paths": ["docs/"]}], ref
+        assert out["problems"] == [], ref
+
+
+def test_a_setting_written_twice_is_said_and_the_last_one_used(repo):
+    write(repo, ".cloudaeye.config", "## Ultrareview\n### Limits\n- Risk score: 40\n- Risk score: 30\n")
+    out = ce_json(repo, "effective")
+    assert out["ultrareview"]["limits"]["risk"] == 30
+    assert out["problems"] == [".cloudaeye.config line 4: Risk score is also set on line 3; line 4 is used"]
+
+
+def test_a_mistake_costs_its_line_and_is_named(repo):
+    write(repo, ".cloudaeye.config", "## Ultrareview\n### Limits\n- Risk scroe: 10\n- Review severity: high\n"
+                                     "- AI slop score: 50\n## Somewhere\n- Foo: bar\n")
+    out = ce_json(repo, "effective")
+    assert out["ultrareview"] == {"limits": {"slop": 50}}
+    assert len(out["problems"]) == 3
+    assert "error" in ce_json(repo, "set", "ultrareview.limits.risk=140")
+    assert "error" in ce_json(repo, "add", "review.skip", "../outside")
+
+
+def test_show_in_a_directory_says_what_it_inherits_and_leaves_triage_to_the_root(repo):
+    ce(repo, "set", "ultrareview.limits.risk=40", "triage.okrs=x")
+    ce(repo, "set", "--dir", "docs", "ultrareview.limits.slop=30")
+    out = ce_json(repo, "show", "--dir", "./docs/")
+    assert out["file"] == "docs/.cloudaeye.config" and out["exists"] and out["elsewhere"] == [".cloudaeye.config"]
+    rows = {r["key"]: r for r in out["settings"]}
+    assert rows["ultrareview.limits.risk"]["value"] is None and rows["ultrareview.limits.risk"]["inherited"] == 40
+    assert rows["ultrareview.limits.risk"]["inherited_from"] == "the root"
+    assert rows["ultrareview.limits.slop"]["value"] == 30
+    assert not any(k.startswith("triage.") for k in rows)
+    assert "error" in ce_json(repo, "show", "--dir", "nowhere")
+
+
+def test_clearing_a_list_and_a_sync_that_is_not_the_tools_answer(repo):
+    ce(repo, "add", "review.skip", "vendor/")
+    ce(repo, "add", "ultrareview.instructions", "Two humans for payments.")
+    assert "review" not in ce_json(repo, "clear", "review.skip")["values"]
+    assert ce_json(repo, "effective")["ultrareview"]["instructions"] == ["Two humans for payments."]
+    assert "not the review_rules tool's JSON" in ce_json(repo, "sync-rules", "--file", "-", stdin="not json")["error"]
+    assert "setup_required" in ce_json(repo, "sync-rules", "--file", "-",
+                                       stdin=json.dumps({"status": "error", "error": "setup_required"}))["error"]

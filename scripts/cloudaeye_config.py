@@ -185,9 +185,10 @@ class Files:
     def _read(self, path: str) -> str | None:
         if self.ref:
             got = _git(self.root, "show", f"{self.ref}:{path}")
-            return got.stdout.decode("utf-8", "replace") if got.returncode == 0 else None
+            # a byte-order mark or Windows line endings committed with the file read like any other
+            return got.stdout.decode("utf-8-sig", "replace").replace("\r\n", "\n") if got.returncode == 0 else None
         try:
-            return (self.root / path).read_text(encoding="utf-8")
+            return (self.root / path).read_text(encoding="utf-8-sig")
         except (OSError, UnicodeDecodeError) as exc:
             self.problems.append(f"{path} could not be read ({type(exc).__name__})")
             return None
@@ -271,8 +272,9 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
     """``({key: value}, problems)`` for every setting written outside a comment."""
     values: dict = {}
     problems: list[str] = []
+    seen: dict[str, int] = {}
     section = group = ""
-    for n, line in enumerate(blank_comments(text).split("\n"), 1):
+    for n, line in enumerate(blank_comments(text.lstrip("﻿")).split("\n"), 1):
         m = re.match(r"^(#{2,3})\s+(.+?)\s*$", line)
         if m:
             if m.group(1) == "##":
@@ -301,6 +303,10 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
         if setting.kind == "list":
             values.setdefault(setting.key, []).extend(value)
         else:
+            if setting.key in seen:
+                problems.append(f"{source} line {n}: {setting.label} is also set on line {seen[setting.key]}; "
+                                f"line {n} is used")
+            seen[setting.key] = n
             values[setting.key] = value
     return values, problems
 
@@ -503,7 +509,7 @@ def ensure(root: Path, defaults: Path, directory: str, name: str) -> Path:
     if not path.exists():
         shutil.copyfile(defaults / TEMPLATES[name], path)
         if directory:
-            lines = path.read_text(encoding="utf-8").split("\n")
+            lines = path.read_text(encoding="utf-8-sig").split("\n")
             if lines and lines[0].startswith("# "):
                 lines[0] = f"{lines[0]}: {directory}/"
             path.write_text("\n".join(lines), encoding="utf-8")
@@ -628,6 +634,7 @@ def clear_lines(text: str, s: Setting) -> str:
 
 def parse_rules(text: str, source: str = RULES) -> tuple[str, list[dict], list[str]]:
     """``(header, rules, problems)``: each rule ``{id, heading, text, paths, raw}``."""
+    text = text.lstrip("﻿")
     raw_lines = text.split("\n")
     lines = blank_comments(text).split("\n")
     starts = [i for i, ln in enumerate(lines) if re.match(r"^##\s+\S", ln)]
@@ -683,7 +690,7 @@ def sync_rules(text: str, synced: list[dict]) -> tuple[str, dict]:
 def _changed(source: str) -> list[str]:
     if not source:
         return []
-    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8-sig")
     return [line for line in text.splitlines() if line.strip()]
 
 
@@ -718,7 +725,7 @@ def main(argv: list[str] | None = None) -> int:
         elif a.command == "rules":
             directory = norm_dir(root, a.dir)
             path = root / directory / RULES if directory else root / RULES
-            text = path.read_text(encoding="utf-8") if path.is_file() else None
+            text = path.read_text(encoding="utf-8-sig") if path.is_file() else None
             _, rules, problems = parse_rules(text or "")
             result = {"file": path.relative_to(root).as_posix(), "exists": text is not None,
                       "rules": [{k: r[k] for k in ("id", "heading", "text", "paths")} for r in rules],
@@ -734,13 +741,16 @@ def main(argv: list[str] | None = None) -> int:
                 _under(directory, p)
             path = ensure(root, defaults, directory, RULES)
             rule = {"id": heading, "text": body, "paths": paths}
-            path.write_text(path.read_text(encoding="utf-8").rstrip("\n") + "\n\n" + _render_rule(rule) + "\n",
+            path.write_text(path.read_text(encoding="utf-8-sig").rstrip("\n") + "\n\n" + _render_rule(rule) + "\n",
                             encoding="utf-8")
-            _, rules, problems = parse_rules(path.read_text(encoding="utf-8"))
+            _, rules, problems = parse_rules(path.read_text(encoding="utf-8-sig"))
             result = {"file": path.relative_to(root).as_posix(), "rules": len(rules), "problems": problems}
         elif a.command == "sync-rules":
-            source = sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")
-            got = json.loads(source)
+            source = sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8-sig")
+            try:
+                got = json.loads(source)
+            except ValueError:
+                raise ConfigError("the rules answer is not the review_rules tool's JSON; nothing was synced") from None
             if got.get("status") not in (None, "ok"):
                 raise ConfigError(f"the rules could not be read: {got.get('error') or got.get('status')}")
             if not got.get("rules") and not (root / RULES).exists():
@@ -748,13 +758,13 @@ def main(argv: list[str] | None = None) -> int:
                 result = {"file": RULES, "synced": 0, "added": [], "removed": [], "yours": 0, "written": False}
             else:
                 path = ensure(root, defaults, "", RULES)
-                text, counts = sync_rules(path.read_text(encoding="utf-8"), got.get("rules"))
+                text, counts = sync_rules(path.read_text(encoding="utf-8-sig"), got.get("rules"))
                 path.write_text(text, encoding="utf-8")
                 result = {"file": RULES, **counts, "written": True}
         else:
             directory = norm_dir(root, a.dir)
             path = ensure(root, defaults, directory, CONFIG)
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8-sig")
             if a.command == "set":
                 for pair in a.args:
                     key, sep, raw = pair.partition("=")

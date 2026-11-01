@@ -67,6 +67,24 @@ With no argument a command reviews your **uncommitted changes**; with a pull-req
 
 The pull request must be open, merge into your integrated branch, not come from a fork, and change at most 50 files.
 
+### Settings
+
+`/cloudaeye:config` writes your team's settings to `.cloudaeye.config` and the review rules to `.cloudaeye.rules`, and syncs your organisation's rules from the console every time it runs. Commit both files.
+
+```markdown
+## Ultrareview
+### Limits
+- Risk score: 40/100
+### Human reviewers
+- Max human reviewers to assign: 2
+### Ultrareview instructions
+- Changes under services/payments/ always need two humans.
+```
+
+- With neither file anywhere in the repository, every command uses CloudAEye's defaults with no rules.
+- A file covers its own directory and everything below it; one further down wins, setting by setting. A change spanning several gets whatever asks for more review.
+- Pull requests read the files from the target branch, so a pull request cannot loosen its own settings.
+
 ### Reviewer model options
 
 `review`, `inspect` and `security` take `--model`, `--model-provider` and `--invert-model true|false` for one run, e.g. `/cloudaeye:inspect --model gpt`. Omitted options use your organisation's saved settings.
@@ -130,7 +148,9 @@ Sign-in needs an interactive client, so unattended CI is not supported yet.
 .cursor-plugin/, cursor/          the Cursor plugin
 .mcp.json                         MCP server registration
 skills/<verb>/SKILL.md            the commands, including help
-scripts/                          local helpers: repository detection, OWNERS.md from git blame
+scripts/                          local helpers: repository detection, OWNERS.md from git blame, the settings files
+resources/config/                 the templates a new .cloudaeye.config and .cloudaeye.rules start from
+tests/                            the settings files' tests (python -m pytest tests; needs git)
 ```
 
 Adding a command: add it to the Commands table above (help reads it), and to the documentation's Skills & Commands and User Guide pages.
