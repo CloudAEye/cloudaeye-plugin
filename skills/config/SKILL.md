@@ -1,6 +1,6 @@
 ---
 name: config
-description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the scores it may approve on its own, how many reviewers it asks for, and your own instructions), the review's defaults, the control-flow map and the triage queue — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules. One section at a time; you answer in your own words.
+description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the hard limits it approves within, the most human reviewers it assigns, and your ultrareview instructions), the review's defaults, the control-flow map's effort and the triage OKRs — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules. One section at a time; you answer in your own words.
 when_to_use: Use when the user runs /cloudaeye:config, or asks to change CloudAEye's settings, approval limits, number of reviewers, review rules or instructions, or to sync the review rules from the console.
 argument-hint: "[directory] [rules]"
 allowed-tools: ["Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules"]
@@ -98,13 +98,13 @@ Run `CE show DIR` and go through its `settings` section by section, in this orde
 
 | # | Section | Settings (key) |
 |---|---|---|
-| 1 | Ultrareview — checks | PR checklist (`ultrareview.checks.checklist`), Review (`ultrareview.checks.review`), AI slop score (`ultrareview.checks.slop`), Risk score (`ultrareview.checks.risk`), Architecture (`ultrareview.checks.architecture`), Control flow (`ultrareview.checks.control_flow`), Task check (`ultrareview.checks.task`) — on or off |
+| 1 | Ultrareview — checks | PR checklist (`ultrareview.checks.checklist`), Review — bugs and security (`ultrareview.checks.review`), AI slop score (`ultrareview.checks.slop`), Risk score (`ultrareview.checks.risk`), Architecture (`ultrareview.checks.architecture`), Control flow (`ultrareview.checks.control_flow`), Task check (`ultrareview.checks.task`) — on or off |
 | 2 | Ultrareview — limits | Risk score (`ultrareview.limits.risk`), AI slop score (`ultrareview.limits.slop`) — 0 to 100; Review severity (`ultrareview.limits.severity`) — medium or low |
-| 3 | Ultrareview — reviewers | Reviewers (`ultrareview.reviewers`) — 1, 2 or 3 |
-| 4 | Ultrareview — instructions | Instructions (`ultrareview.instructions`) — plain sentences |
+| 3 | Ultrareview — human reviewers | Max human reviewers to assign (`ultrareview.max_reviewers`) — 1, 2 or 3 |
+| 4 | Ultrareview instructions | `ultrareview.instructions` — plain sentences |
 | 5 | Review | Severity floor (`review.severity_floor`) — all, critical, high, medium, low; Paths never reviewed (`review.skip`) |
-| 6 | Control flow | Depth (`control_flow.depth`) — 1, 2 or 3; Across repositories (`control_flow.cross_repo`) — yes or no |
-| 7 | Triage PRs | OKRs (`triage.okrs`) — text, or a file in the repository; Show (`triage.show`) — 1 to 50; Label without asking (`triage.label`) — yes or no |
+| 6 | Control flow | Effort (`control_flow.effort`) — low, medium or high; Across repositories (`control_flow.cross_repo`) — yes or no |
+| 7 | Triage PRs | OKRs (`triage.okrs`) — text, or a file in the repository |
 
 For each section print a short table — **Setting | Now | Options** — where *Now* is the
 setting's `value`; otherwise its `inherited` value followed by *(from
@@ -113,9 +113,10 @@ section means:
 
 1. *A check that is off is not run. With Review, AI slop score or Risk score off,
    nothing is approved automatically.*
-2. *The highest values CloudAEye may still approve on its own. Some findings always
-   need a human, such as a leaked secret or a Critical issue.*
-3. *How many people to ask for when a change is not approved.*
+2. *Hard limits: a change above any of them is never approved automatically. Some
+   findings always need a human too, such as a leaked secret or a Critical issue.*
+3. *The most people to assign when a change is not approved. One is assigned unless
+   your ultrareview instructions ask for more.*
 4. *Anything else ultrareview should follow, in plain words — for example "Pull
    requests from the Platform team need two humans: one from the team, one from
    outside it." An instruction can ask for more review, never less. Team names are
@@ -123,10 +124,9 @@ section means:
 5. *The floor applies to /cloudaeye:inspect, /security and /review when you give no
    level; ultrareview ignores it. Paths never reviewed are relative to this directory
    and left out of the change before it is uploaded, before a commit only.*
-6. *How far the control-flow map follows calls, and whether it looks for callers in
-   your other repositories.*
-7. *What /cloudaeye:triage-prs weighs and shows. Labelling a repository CloudAEye has
-   not labelled yet takes 3 to 8 AI calls, once; "yes" agrees to that up front.*
+6. *How much effort the control-flow map spends following calls, and whether it looks
+   for callers in your other repositories.*
+7. *The key results /cloudaeye:triage-prs weighs each pull request against.*
 
 Then ask: *Change anything here? Reply in your own words ("risk 40, slop 50", "turn
 off architecture"), "next" to keep it as it is, or "done" to finish.*
@@ -158,10 +158,10 @@ Print:
 - each file written (`file`), and each setting changed, as *before → after*;
 - the rules synced or added;
 - which commands read what:
-  - `/cloudaeye:ultrareview` — the checks, limits, reviewers and instructions, the rules, and the control-flow settings;
+  - `/cloudaeye:ultrareview` — the checks, hard limits, the most human reviewers, the ultrareview instructions, the rules, and the control-flow settings;
   - `/cloudaeye:inspect`, `/cloudaeye:security`, `/cloudaeye:review` — the severity floor, the paths never reviewed and the rules;
-  - `/cloudaeye:control-flow` — the depth and the search across repositories;
-  - `/cloudaeye:triage-prs` — the OKRs, how many to show and labelling.
+  - `/cloudaeye:control-flow` — the effort and the search across repositories;
+  - `/cloudaeye:triage-prs` — the OKRs.
 - one line: *Commit `.cloudaeye.config` and `.cloudaeye.rules` so your team uses them
   too. Pull requests read them from the target branch, so they apply to pull requests
   once merged there.*

@@ -44,7 +44,7 @@ server finds it from the user's sign-in when it can.
 
 ### 3. Your settings
 
-When you are in a git repository, read the Triage section of its top-level
+When you are in a git repository, read the OKRs setting in its top-level
 `.cloudaeye.config` (`/cloudaeye:config` writes it), in one Bash call:
 
 ```bash
@@ -53,9 +53,8 @@ for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/
 "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective
 ```
 
-From `triage` in the answer: `okrs` (used when the user named no `okrs:`), `show`
-(how many to list) and `label` (`true`: labelling was agreed to up front, see step 8).
-An `error`, or no `triage`, means none of them apply.
+`triage.okrs` in the answer is used when the user named no `okrs:`. An `error`, or no
+`triage`, means there is none.
 
 ### 4. Read the OKR document, when one was named
 
@@ -85,8 +84,8 @@ this step: they read every repository the team connected.
 ### 6. Call `triage_prs`
 
 Pass `reviewer=REVIEWER`, `scope` (`mine`, `here`, `repo` or `all`), `repo` for `here`
-and `repo`, `note=NOTE`, `okrs=OKRS`, `limit` from `triage.show` when set, and
-`for_login` (no `@`) when the user asked for someone else's queue.
+and `repo`, `note=NOTE`, `okrs=OKRS`, and `for_login` (no `@`) when the user asked for
+someone else's queue.
 
 - `status: login_needed`: ask once — *What is your GitHub username?* — and call again
   with it as `reviewer`.
@@ -118,9 +117,7 @@ When `labelling.needed` is not empty and `labelling.started` is absent, ask once
 *N repositories have no component labels yet, which makes business impact less exact.
 Label them in the background? It is a one-off AI cost per repository, billed to your
 team.* On yes, call `triage_prs` again with the same arguments and `label=true`,
-and print the new card. Never pass `label=true` without asking — unless `triage.label`
-in your settings is `true`: then you agreed up front, so call again with `label=true`
-without asking and say in one line that your settings allowed it.
+and print the new card. Never pass `label=true` without asking.
 
 ### 9. End there
 

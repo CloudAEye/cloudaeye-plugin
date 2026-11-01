@@ -179,14 +179,15 @@ prompt for a key.
    "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
    ```
 
-   `control_flow.depth` and `control_flow.cross_repo` in them are your defaults;
+   `control_flow.effort` and `control_flow.cross_repo` in them are your defaults;
    what the user asks for in this run wins. Print each of `problems` once. An
    `error` means use CloudAEye's defaults.
 
    Then call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
-   skill's frontmatter) with `session_id` from step 1, `depth` and `cross_repo`
-   when the user or the settings give them, and `label` at its default — the tool
-   docstring explains each. Two more arguments:
+   skill's frontmatter) with `session_id` from step 1, `depth` — the effort as hops:
+   `low` 1, `medium` 2, `high` 3 — and `cross_repo` when the user or the settings
+   give them, and `label` at its default — the tool docstring explains each. Two
+   more arguments:
 
    - `context`: pass `{"scope_path": "<path>"}` only when the user scoped the
      run to a directory.

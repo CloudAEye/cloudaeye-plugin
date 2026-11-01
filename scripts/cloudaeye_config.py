@@ -58,11 +58,12 @@ class Setting:
     options: tuple = ()
     lo: int = 0
     hi: int = 0
+    note: str = ""        # a comment kept after the value, set or commented out
 
 
 SETTINGS = (
     Setting("ultrareview.checks.checklist", "Ultrareview", "Checks", "PR checklist", "onoff"),
-    Setting("ultrareview.checks.review", "Ultrareview", "Checks", "Review (bugs and security)", "onoff"),
+    Setting("ultrareview.checks.review", "Ultrareview", "Checks", "Review", "onoff", note="bugs and security"),
     Setting("ultrareview.checks.slop", "Ultrareview", "Checks", "AI slop score", "onoff"),
     Setting("ultrareview.checks.risk", "Ultrareview", "Checks", "Risk score", "onoff"),
     Setting("ultrareview.checks.architecture", "Ultrareview", "Checks", "Architecture", "onoff"),
@@ -71,24 +72,24 @@ SETTINGS = (
     Setting("ultrareview.limits.risk", "Ultrareview", "Limits", "Risk score", "score"),
     Setting("ultrareview.limits.slop", "Ultrareview", "Limits", "AI slop score", "score"),
     Setting("ultrareview.limits.severity", "Ultrareview", "Limits", "Review severity", "choice", ("medium", "low")),
-    Setting("ultrareview.reviewers", "Ultrareview", "Reviewers", "Reviewers", "choice", ("1", "2", "3")),
-    Setting("ultrareview.instructions", "Ultrareview", "Instructions", "", "lines"),
+    Setting("ultrareview.max_reviewers", "Ultrareview", "Human reviewers", "Max human reviewers to assign",
+            "choice", ("1", "2", "3")),
+    Setting("ultrareview.instructions", "Ultrareview", "Ultrareview instructions", "", "lines"),
     Setting("review.severity_floor", "Review", "Severity floor", "Severity floor", "choice",
             ("all", "critical", "high", "medium", "low")),
     Setting("review.skip", "Review", "Paths never reviewed", "Skip", "list"),
-    Setting("control_flow.depth", "Control flow", "", "Depth", "choice", ("1", "2", "3")),
+    Setting("control_flow.effort", "Control flow", "", "Effort", "choice", ("low", "medium", "high")),
     Setting("control_flow.cross_repo", "Control flow", "", "Across repositories", "yesno"),
     Setting("triage.okrs", "Triage PRs", "", "OKRs", "text"),
-    Setting("triage.show", "Triage PRs", "", "Show", "number", lo=1, hi=50),
-    Setting("triage.label", "Triage PRs", "", "Label without asking", "yesno"),
 )
 BY_KEY = {s.key: s for s in SETTINGS}
 #: across a change's files, the value that asks for more review
 _LOWEST = {"ultrareview.limits.risk", "ultrareview.limits.slop", "ultrareview.limits.severity",
            "review.severity_floor"}
-_HIGHEST = {"ultrareview.reviewers", "control_flow.depth"}
+_HIGHEST = {"ultrareview.max_reviewers", "control_flow.effort"}
 _ORDER = {"ultrareview.limits.severity": ("low", "medium"),
-          "review.severity_floor": ("all", "low", "medium", "high", "critical")}
+          "review.severity_floor": ("all", "low", "medium", "high", "critical"),
+          "control_flow.effort": ("low", "medium", "high")}
 _RULE_ID = re.compile(r"^r\d+$", re.I)
 _TICKS = re.compile(r"`([^`]+)`")
 _BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -425,7 +426,7 @@ def merge(per_file: list[dict]) -> dict:
                 lines += [v for v in value if v not in lines]
             out[key] = lines
         elif key in _ORDER:
-            out[key] = min(known, key=_ORDER[key].index)
+            out[key] = (min if key in _LOWEST else max)(known, key=_ORDER[key].index)
         elif key in _LOWEST:
             out[key] = min(known)
         elif key in _HIGHEST:
@@ -551,12 +552,14 @@ def set_value(text: str, s: Setting, raw: str | None) -> str:
     pattern = _line_re(s)
     inside = _comment_lines(lines)
     hit = next((i for i in range(first + 1, end) if not inside[i] and pattern.match(lines[i])), None)
+    note = f" <!-- {s.note} -->" if s.note else ""
     if raw is None:
         if hit is not None and not pattern.match(lines[hit]).group(2):
-            lines[hit] = f"<!-- {lines[hit].strip()} -->"
+            current = blank_comments(lines[hit]).strip()       # the note stays outside, never nested
+            lines[hit] = f"<!-- {current} -->{note}"
         return "\n".join(lines)
     value = value_of(s, raw)
-    new = f"- {s.label}: {_render(s, value)}"
+    new = f"- {s.label}: {_render(s, value)}{note}"
     if hit is not None:
         lines[hit] = new
     else:

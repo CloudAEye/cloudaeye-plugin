@@ -181,14 +181,15 @@ What they decide:
 - **`SETTINGS.ultrareview.checks`** — a check set to `false` is not run: skip its
   step below. Review, AI slop and risk are what an approval rests on: with any of
   them off, the verdict is a human review.
-- **`SETTINGS.ultrareview`** — the checks, limits, reviewers and instructions — goes
+- **`SETTINGS.ultrareview`** — the checks, hard limits, `max_reviewers` and instructions — goes
   whole, as it is, as `policy` to `review_summary` (steps 10 and 12). Leave `policy`
   out when it is absent.
 - **`SETTINGS.rules`** — the team's review rules — go as `rules` to the review
   (step 2) when there are any.
 - **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
   commit only; on a pull request the server reads the whole pull request.
-- **`SETTINGS.control_flow`** — `depth` and `cross_repo` for step 7.
+- **`SETTINGS.control_flow`** — for step 7: `effort` as `depth` (`low` 1, `medium` 2,
+  `high` 3) and `cross_repo` as it is.
 - **`SETTINGS.review.severity_floor` is not used here**: the AI slop score cannot
   reuse a review run with a floor, and would pay for its own.
 
@@ -384,8 +385,8 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
 6. **Architecture** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` with
    `session_id`, `post: false`, and `context` (the scope label).
 7. **Control flow** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__control_flow` with
-   `session_id`, `post: false`, and `context` (the scope label), plus `depth` and
-   `cross_repo` from `SETTINGS.control_flow` when set. Leave `label` at its default.
+   `session_id`, `post: false`, and `context` (the scope label), plus `depth` (from
+   `SETTINGS.control_flow.effort`) and `cross_repo` when set. Leave `label` at its default.
 8. **Task** (working-tree and path modes, with `task:`, unless turned off). Call
    `mcp__plugin_cloudaeye_cloudaeye__check_task` with `session_id`,
    `task_description`, `task_source` and the **same** `intent`.
@@ -402,8 +403,10 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
     It reads every result stored above and returns the report's top: `headline`
     (approved for merge, or requires human review), `verdict` (`approve` or
     `review`), `reasons`, the `results` table and the `summary` of next steps;
-    under `review`, `reviewers` (how many people) and `reviewer_note` (who they
-    should be, from your instructions). With settings it also returns `settings`
+    under `review`, `reviewers` (how many people: one, or more when an instruction
+    asks, never above your maximum — `reviewers_capped` says when an instruction
+    asked for more) and `reviewer_note` (who they should be, from your
+    instructions). With settings it also returns `settings`
     (what was applied), `instructions` (each applied or not, and why) and
     `policy_problems`. It runs no review and decides by rule: your instructions can
     only ask for more review. Call it even when a step after the review failed — it
@@ -499,11 +502,13 @@ all is a human review, never an approval. If step 10 did not answer, write
 
 **Your settings** — when step 10 returned `settings`: one line, *Decided with your
 settings* (the files in `SETTINGS.applied`, and *as on <target>* on a pull request)*:*
-the limits (risk *n*/100, AI slop *n*/100, review severity), the reviewer count and
-the checks turned off, as `settings` gives them. Under it, each of
-`instructions` — the instruction in quotes, *applied* or *not applied*, and its `why`
-— and each of `policy_problems` (a setting that was left out). Never print this block
-when there were no settings.
+the hard limits (risk *n*/100, AI slop *n*/100, review severity), the most human
+reviewers to assign (`max_reviewers`) and the checks turned off, as `settings` gives
+them. Under it, each of `instructions` — the instruction in quotes, *applied* or *not
+applied*, and its `why` — then, when step 10 returned `reviewers_capped`, *an
+instruction asked for <asked> reviewers; your settings assign at most <max>*, and each
+of `policy_problems` (a setting that was left out). Never print this block when there
+were no settings.
 
 **Suggested reviewers** — only under *requires human review*:
 

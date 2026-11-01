@@ -15,7 +15,7 @@
 <!-- on | off. A check that is off is not run. With Review, AI slop score or Risk score off,
      nothing is approved automatically. -->
 <!-- - PR checklist: on -->
-<!-- - Review (bugs and security): on -->
+<!-- - Review: on --> <!-- bugs and security -->
 <!-- - AI slop score: on -->
 <!-- - Risk score: on -->
 <!-- - Architecture: on -->
@@ -23,16 +23,17 @@
 <!-- - Task check: on -->
 
 ### Limits
-<!-- Highest values CloudAEye may still approve on its own. -->
+<!-- Hard limits: a change above any of these is never approved automatically. -->
 <!-- - Risk score: 40/100 -->
 <!-- - AI slop score: 50/100 -->
 <!-- - Review severity: medium | low -->
 
-### Reviewers
-<!-- Humans to ask for when a change is not approved: 1 | 2 | 3 -->
-<!-- - Reviewers: 1 -->
+### Human reviewers
+<!-- The most humans to assign when a change is not approved: 1 | 2 | 3.
+     One is assigned unless your ultrareview instructions ask for more. -->
+<!-- - Max human reviewers to assign: 2 -->
 
-### Instructions
+### Ultrareview instructions
 <!-- Anything else, in plain words. Can ask for more review, never less. -->
 <!-- - Pull requests from the Platform team need two humans: one from the team, one from outside it. -->
 <!-- - Changes under `services/payments/` always need two humans. -->
@@ -53,17 +54,14 @@
 
 
 ## Control flow
-<!-- /cloudaeye:control-flow. Ultrareview uses these too. -->
-<!-- Depth: 2 | 1 | 3.  Across repositories: yes | no -->
-<!-- - Depth: 2 -->
+<!-- /cloudaeye:control-flow. Ultrareview uses these too.
+     Effort: low | medium | high, how far the map follows calls.
+     Across repositories: yes | no. -->
+<!-- - Effort: medium -->
 <!-- - Across repositories: yes -->
 
 
 ## Triage PRs
-<!-- /cloudaeye:triage-prs. Read from the repository's top-level file only. -->
-<!-- OKRs: your team's key results, or a file that holds them. -->
+<!-- /cloudaeye:triage-prs. Read from the repository's top-level file only.
+     OKRs: your team's key results, or a file that holds them. -->
 <!-- - OKRs: `docs/okrs-q4.md` -->
-<!-- Show: how many pull requests to list. Label without asking: no | yes
-     (a repository not labelled yet takes 3 to 8 AI calls, once). -->
-<!-- - Show: 15 -->
-<!-- - Label without asking: no -->

@@ -87,10 +87,10 @@ def test_with_no_files_on_the_target_branch_a_pull_request_gets_the_defaults(rep
 
 def test_a_directory_file_applies_to_its_directory_and_below_and_never_to_a_sibling(repo):
     assert ce_json(repo, "set", "--dir", "services/payments", "ultrareview.limits.risk=20",
-                   "ultrareview.reviewers=2")["file"] == "services/payments/.cloudaeye.config"
+                   "ultrareview.max_reviewers=2")["file"] == "services/payments/.cloudaeye.config"
 
     deep = ce_json(repo, "effective", "--", "services/payments/api/c.py")
-    assert deep["ultrareview"] == {"limits": {"risk": 20}, "reviewers": 2}
+    assert deep["ultrareview"] == {"limits": {"risk": 20}, "max_reviewers": 2}
     assert deep["applied"] == ["services/payments/.cloudaeye.config"]
 
     for elsewhere in ("services/search/d.py", "src/a.py", "README.md"):
@@ -112,23 +112,36 @@ def test_the_nearest_file_wins_setting_by_setting_and_instructions_add_up(repo):
 
 
 def test_across_a_change_the_value_that_asks_for_more_review_wins(repo):
-    ce(repo, "set", "ultrareview.limits.risk=40", "ultrareview.reviewers=1")
+    ce(repo, "set", "ultrareview.limits.risk=40", "ultrareview.max_reviewers=1", "control_flow.effort=low")
     ce(repo, "set", "--dir", "docs", "ultrareview.limits.risk=80", "ultrareview.checks.architecture=off")
-    ce(repo, "set", "--dir", "services/payments", "ultrareview.reviewers=3", "ultrareview.limits.severity=low")
+    ce(repo, "set", "--dir", "services/payments", "ultrareview.max_reviewers=3", "ultrareview.limits.severity=low",
+       "control_flow.effort=high")
 
-    docs_only = ce_json(repo, "effective", "--", "docs/guide/b.md")["ultrareview"]
-    assert docs_only["limits"]["risk"] == 80 and docs_only["checks"] == {"architecture": False}
+    docs_only = ce_json(repo, "effective", "--", "docs/guide/b.md")
+    assert docs_only["ultrareview"]["limits"]["risk"] == 80
+    assert docs_only["ultrareview"]["checks"] == {"architecture": False}
 
-    both = ce_json(repo, "effective", "--", "docs/guide/b.md", "services/payments/api/c.py")["ultrareview"]
-    assert both["limits"] == {"risk": 40, "severity": "low"}
-    assert both["reviewers"] == 3
-    assert "checks" not in both, "a check stays on unless every changed file's settings turn it off"
+    both = ce_json(repo, "effective", "--", "docs/guide/b.md", "services/payments/api/c.py")
+    assert both["ultrareview"]["limits"] == {"risk": 40, "severity": "low"}
+    assert both["ultrareview"]["max_reviewers"] == 3
+    assert both["control_flow"]["effort"] == "high"
+    assert "checks" not in both["ultrareview"], "a check stays on unless every changed file's settings turn it off"
 
 
 def test_triage_reads_the_top_level_file_only(repo):
-    assert "error" in ce_json(repo, "set", "--dir", "docs", "triage.show=5")
-    ce(repo, "set", "triage.show=10")
-    assert ce_json(repo, "effective")["triage"] == {"show": 10}
+    assert "error" in ce_json(repo, "set", "--dir", "docs", "triage.okrs=`docs/okrs.md`")
+    ce(repo, "set", "triage.okrs=`docs/okrs.md`")
+    assert ce_json(repo, "effective", "--", "docs/guide/b.md")["triage"] == {"okrs": "`docs/okrs.md`"}
+
+
+def test_a_comment_beside_a_setting_survives_setting_it_and_commenting_it_out(repo):
+    ce(repo, "set", "ultrareview.checks.review=off")
+    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert "- Review: off <!-- bugs and security -->" in text
+    ce(repo, "set", "ultrareview.checks.review=-")
+    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert "<!-- - Review: off --> <!-- bugs and security -->" in text
+    assert "ultrareview" not in ce_json(repo, "effective"), "commented out again: the default"
 
 
 def test_a_directory_rule_covers_that_directory_and_below_only(repo):
