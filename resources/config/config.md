@@ -6,7 +6,7 @@
      down wins over it, setting by setting. When a change touches files under different
      settings, it gets whichever asks for more review.
      Commit it. On a pull request, CloudAEye reads it from the target branch, so a pull request
-     cannot change its own settings. Every command posts its result on the pull request. -->
+     cannot change its own settings. -->
 
 
 ## Ultrareview

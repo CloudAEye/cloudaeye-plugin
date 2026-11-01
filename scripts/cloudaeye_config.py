@@ -236,6 +236,16 @@ def _find(section: str, group: str, label: str) -> Setting | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _nearest(section: str, label: str) -> str:
+    """`` — did you mean 'Risk score'?`` for a label one typo away from a setting in this section."""
+    import difflib
+
+    names = sorted({s.label for s in SETTINGS if s.label and s.section.lower() == section.lower()})
+    close = difflib.get_close_matches(label, names, n=1, cutoff=0.6) or [
+        n for n in names if n.lower().startswith(label.lower()) or label.lower().startswith(n.lower())][:1]
+    return f" — did you mean '{close[0]}'?" if close else ""
+
+
 def value_of(s: Setting, raw: str):
     """The value as the other skills use it, or ``ConfigError`` naming the options."""
     text = raw.strip()
@@ -293,7 +303,8 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
         kv = re.match(r"^([^:]+?)\s*:\s*(.*)$", item.group(1))
         setting = _find(section, group, kv.group(1)) if kv else None
         if setting is None:
-            problems.append(f"{source} line {n}: {item.group(1)!r} is not a setting here, so it was skipped")
+            hint = _nearest(section, kv.group(1)) if kv else ""
+            problems.append(f"{source} line {n}: {item.group(1)!r} is not a setting here, so it was skipped{hint}")
             continue
         try:
             value = value_of(setting, kv.group(2))
@@ -475,6 +486,16 @@ def effective(root: Path, ref: str, changed: list[str]) -> dict:
     return out
 
 
+_OPTIONS = {"onoff": ["on", "off"], "yesno": ["yes", "no"], "truefalse": ["true", "false"], "score": ["0-100"],
+            "lines": ["plain sentences, one a line"], "list": ["paths or patterns, one a line"],
+            "text": ["text, or a file in backticks"]}
+#: what a setting is when no file names it, as show prints it. The hard limits are CloudAEye's own
+#: check, and how that check is built is never printed.
+DEFAULTS = {"ultrareview.checks": "on", "ultrareview.assign_reviewers": "true", "ultrareview.max_reviewers": "3",
+            "ultrareview.instructions": "none", "review.severity_floor": "all", "review.skip": "none",
+            "control_flow.effort": "medium", "control_flow.cross_repo": "yes", "triage.okrs": "none"}
+
+
 def show(root: Path, directory: str) -> dict:
     settings = Settings(Files(root))
     mine = settings.configs.get(directory, {})
@@ -486,9 +507,10 @@ def show(root: Path, directory: str) -> dict:
         from_ = inherited.get(s.key)
         rows.append({
             "key": s.key, "section": s.section, "group": s.group, "label": s.label or s.group,
-            "kind": s.kind, "options": list(s.options) or (
-                ["on", "off"] if s.kind == "onoff" else ["yes", "no"] if s.kind == "yesno" else
-                ["true", "false"] if s.kind == "truefalse" else ["0-100"] if s.kind == "score" else [f"{s.lo}-{s.hi}"] if s.kind == "number" else []),
+            "kind": s.kind, "options": list(s.options) or _OPTIONS.get(s.kind, []) or (
+                [f"{s.lo}-{s.hi}"] if s.kind == "number" else []),
+            "default": next((d for k, d in DEFAULTS.items() if s.key == k or s.key.startswith(k + ".")),
+                            "CloudAEye's own check"),
             "value": mine.get(s.key),
             "inherited": from_,
             "inherited_from": ((where[s.key] + "/") if where.get(s.key) else "the root") if from_ is not None
@@ -509,7 +531,11 @@ def ensure(root: Path, defaults: Path, directory: str, name: str) -> Path:
     if not path.exists():
         shutil.copyfile(defaults / TEMPLATES[name], path)
         if directory:
-            lines = path.read_text(encoding="utf-8-sig").split("\n")
+            text = path.read_text(encoding="utf-8-sig")
+            if name == CONFIG:
+                # triage reads the root file only; a directory's file offering it would be a dead section
+                text = re.sub(r"\n+## Triage PRs\n.*\Z", "\n", text, flags=re.S)
+            lines = text.split("\n")
             if lines and lines[0].startswith("# "):
                 lines[0] = f"{lines[0]}: {directory}/"
             path.write_text("\n".join(lines), encoding="utf-8")

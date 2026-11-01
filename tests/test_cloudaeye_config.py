@@ -287,3 +287,34 @@ def test_clearing_a_list_and_a_sync_that_is_not_the_tools_answer(repo):
     assert "not the review_rules tool's JSON" in ce_json(repo, "sync-rules", "--file", "-", stdin="not json")["error"]
     assert "setup_required" in ce_json(repo, "sync-rules", "--file", "-",
                                        stdin=json.dumps({"status": "error", "error": "setup_required"}))["error"]
+
+
+# ── what people read ─────────────────────────────────────────────────────────
+
+def test_a_directory_file_offers_no_triage_section_and_the_template_claims_nothing_false(repo):
+    ce(repo, "set", "--dir", "docs", "ultrareview.max_reviewers=3")
+    text = (repo / "docs" / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert text.startswith("# CloudAEye settings: docs/")
+    assert "Triage" not in text, "triage reads the root file only"
+    ce(repo, "set", "ultrareview.max_reviewers=2")
+    root_text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert "## Triage PRs" in root_text
+    assert "Every command posts" not in root_text, "the reviews and describe post nothing"
+
+
+def test_show_says_what_a_setting_is_when_no_file_names_it_and_never_a_limit_number(repo):
+    rows = {r["key"]: r for r in ce_json(repo, "show")["settings"]}
+    assert rows["ultrareview.checks.review"]["default"] == "on"
+    assert rows["ultrareview.assign_reviewers"]["default"] == "true"
+    assert rows["control_flow.effort"]["default"] == "medium"
+    assert rows["ultrareview.instructions"]["default"] == "none"
+    assert rows["ultrareview.instructions"]["options"] == ["plain sentences, one a line"]
+    for limit in ("ultrareview.limits.risk", "ultrareview.limits.slop", "ultrareview.limits.severity"):
+        assert rows[limit]["default"] == "CloudAEye's own check", "how that check is built is never printed"
+
+
+def test_a_mistyped_setting_name_suggests_the_real_one(repo):
+    write(repo, ".cloudaeye.config", "## Ultrareview\n### Limits\n- Risk: 40\n### Human reviewers\n- Max reviewers: 2\n")
+    problems = ce_json(repo, "effective")["problems"]
+    assert problems[0].endswith("did you mean 'Risk score'?")
+    assert problems[1].endswith("did you mean 'Max human reviewers to assign'?")

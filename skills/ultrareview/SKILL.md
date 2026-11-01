@@ -67,11 +67,12 @@ Before anything runs, print this tree for the chosen mode with each node marked
 - `assign-reviewer` is marked **only if a human review is required**: it runs
   when the verdict at the end is *requires human review*, never when the change
   is approved for merge, and only on a pull request (on uncommitted changes:
-  *skipped: needs a pull request*). With **Assign human review** false in your
-  settings it never runs (*skipped: turned off in your settings*).
-- Your settings are read in step 1. A check they turn off is not run: say once,
-  *Turned off in your settings: …*, and its section in the report reads
-  *skipped: turned off in your settings* (see **Your settings** below).
+  *skipped: needs a pull request*). With **Assign human review** false in the
+  repository's settings it never runs (*skipped: turned off in the repository's
+  settings*).
+- The settings are read in step 1. A check they turn off is not run: say once,
+  *Turned off in the repository's settings: …*, and its section in the report reads
+  *skipped: turned off in the repository's settings* (see **Your settings** below).
 
 In pull-request mode, say once under the tree: *the report is posted on the
 pull request as one comment, as the other commands post their cards, and
@@ -515,7 +516,7 @@ were no settings.
 **Suggested reviewers** — only under *requires human review*:
 
 - Assigning turned off (step 10 returned `assign_reviewers: false`): one line,
-  *Not assigned — assigning human reviewers is turned off in your settings.*
+  *Not assigned — assigning human reviewers is turned off in the repository's settings.*
 - Pull request, step 11 ran: the people in `recommended` — step 10's `reviewers`
   of them, in order — as `name` (`login`) — `role`, taken from `candidates`, never
   @-mentioned (a mention notifies them). When fewer were found than asked for,
@@ -539,7 +540,7 @@ criterion is always there — AI slop score, Risk score, Bugs, Security, PR
 checklist, Unit test coverage, Architecture, Control flow, Task. One this run
 cannot have reads *not applicable* and why (the checklist before a pull
 request, a task nobody named); one that should have run and did not reads
-*not run*; one your settings switched off reads *turned off in your settings*.
+*not run*; one the settings switched off reads *turned off in the repository's settings*.
 None is a pass, and they are different: never write one for another. Never add, drop, merge or recompute a row. Under the table, one line says what this
 run paid for: *Ran now: … · Reused from earlier runs on this change: …* (or
 *Everything was reused — nothing ran again* when every step was). Risk is

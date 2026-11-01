@@ -107,8 +107,10 @@ Run `CE show DIR` and go through its `settings` section by section, in this orde
 | 7 | Triage PRs | OKRs (`triage.okrs`) — text, or a file in the repository |
 
 For each section print a short table — **Setting | Now | Options** — where *Now* is the
-setting's `value`; otherwise its `inherited` value followed by *(from
-<inherited_from>)*; otherwise *CloudAEye's default*. Under it, one line of what the
+setting's `value` (a list one item a line); otherwise its `inherited` value followed by
+*(from <inherited_from>)*; otherwise its `default`, followed by *(default)* unless it is
+*none* or *CloudAEye's own check*, which stand alone — never a number for that check.
+*Options* is the row's `options` joined with *or*. Under the table, one line of what the
 section means:
 
 1. *A check that is off is not run. With Review, AI slop score or Risk score off,
