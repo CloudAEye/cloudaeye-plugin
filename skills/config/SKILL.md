@@ -1,6 +1,6 @@
 ---
 name: config
-description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the scores it may approve on its own, how many reviewers it asks for, and your own instructions), the review's defaults, the control-flow map and the triage queue — in a .cloudaeye.config file at the repository's root or in any directory, and sync your organisation's review rules into .cloudaeye.rules. One section at a time; you answer in your own words.
+description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the scores it may approve on its own, how many reviewers it asks for, and your own instructions), the review's defaults, the control-flow map and the triage queue — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules. One section at a time; you answer in your own words.
 when_to_use: Use when the user runs /cloudaeye:config, or asks to change CloudAEye's settings, approval limits, number of reviewers, review rules or instructions, or to sync the review rules from the console.
 argument-hint: "[directory] [rules]"
 allowed-tools: ["Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules"]
@@ -54,7 +54,30 @@ as `REPO`; with `repo=none` (no GitHub, GitLab or Bitbucket remote) the settings
 still be written, but the organisation's rules cannot be synced. `settings_files` lists
 the `.cloudaeye.config` files the repository already has.
 
-### 2. Which directory
+### 2. Sync your organisation's review rules — every run
+
+Every `/cloudaeye:config` brings the review rules saved in the CloudAEye console into
+the repository's root `.cloudaeye.rules` first, without asking: it is a read of the
+console and a write of only the rules it owns. Call
+`mcp__plugin_cloudaeye_cloudaeye__review_rules` with `repo`: `REPO` (skip this step
+when `REPO` is unknown, and say why). An answer with `status: error` is printed as it
+is (`setup_required` → run `/cloudaeye:init` first) and the sync is skipped; the
+settings can still be changed. Otherwise pass the **whole** answer, unchanged, in one
+Bash call:
+
+```bash
+CE sync-rules --file - <<'CLOUDAEYE_RULES_JSON'
+<the review_rules answer, verbatim>
+CLOUDAEYE_RULES_JSON
+```
+
+Say in one line what happened: `synced` rules, with `added` and `removed` by id, and
+`yours` (rules the team wrote, kept as they were). `written: false` means the console
+has no rules for this repository and none were synced before, so no file was created.
+Synced rules are headed by their id (`r12`) and replaced by the next sync: they are
+changed in the console, not here.
+
+### 3. Which directory
 
 A directory argument answers this; otherwise, when `settings_files` lists any outside
 the root, name them, and ask exactly:
@@ -66,9 +89,9 @@ Where should these settings apply?
 ```
 
 Enter or `1` is the root (no `--dir`); a path is `--dir "<path>"`. Call the chosen
-`--dir` (or nothing) `DIR` below. With the argument `rules`, go straight to step 4.
+`--dir` (or nothing) `DIR` below. With the argument `rules`, go straight to step 5.
 
-### 3. One section at a time
+### 4. One section at a time
 
 Run `CE show DIR` and go through its `settings` section by section, in this order
 (Triage PRs only at the root — `show` leaves it out elsewhere):
@@ -119,33 +142,16 @@ Write only what the user asked for, in their words for instructions — never re
 instruction into a stricter or looser one. An answer that is not one of the options
 comes back as an error naming them: say so and ask again; never pick the nearest
 option. After the call, print the section's new values from the command's `values` in
-one line, and go to the next section. "done" ends the questions: go to step 4.
+one line, and go to the next section. "done" ends the questions: go to step 5.
 
-### 4. Your organisation's review rules
+### 5. Rules of your own
 
-Ask: *Sync your organisation's review rules from CloudAEye into `.cloudaeye.rules` now?
-(Y/n)*. On yes, call `mcp__plugin_cloudaeye_cloudaeye__review_rules` with `repo`:
-`REPO`. An answer with `status: error` is printed as it is (`setup_required` → run
-`/cloudaeye:init` first) and the sync is skipped. Otherwise pass the **whole** answer,
-unchanged, in one Bash call:
-
-```bash
-CE sync-rules --file - <<'CLOUDAEYE_RULES_JSON'
-<the review_rules answer, verbatim>
-CLOUDAEYE_RULES_JSON
-```
-
-Synced rules always go in the root `.cloudaeye.rules`. Report `synced`, `added`,
-`removed` and `yours` (rules you wrote, kept as they were). Synced rules are headed by
-their id (`r12`) and replaced by the next sync: they are changed in the CloudAEye
-console, not here.
-
-Then ask: *Add a rule of your own? Say it in plain words, and the paths it applies to
+Ask: *Add a rule of your own? Say it in plain words, and the paths it applies to
 if not everywhere under this directory — or "no".* For each one:
 `CE add-rule DIR --heading "<a short title>" --text "<the rule, in their words>" --paths "api/,lib/"`
 (paths relative to the chosen directory; leave `--paths` out for all of it).
 
-### 5. What changed
+### 6. What changed
 
 Print:
 

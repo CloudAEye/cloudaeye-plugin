@@ -18,7 +18,7 @@ its target branch (--ref), so a pull request cannot change its own settings.
 
 Commands, each printing JSON (skip prints lines):
   effective [--ref REF] [--files F|-] [-- PATH...]   the settings and rules that apply to a change
-  skip                                    every directory's paths never reviewed, one per line
+  skip                                    every directory's paths never reviewed, as git pathspecs, one per line
   show [--dir D]                          D's settings: options, its value, what it inherits
   set [--dir D] KEY=VALUE...              write values; VALUE "-" comments the setting out again
   add [--dir D] KEY TEXT                  add a line to a list setting (instructions, skip)
@@ -380,6 +380,31 @@ class Settings:
         return out
 
 
+def pathspecs(pattern: str) -> list[str]:
+    """What ``git diff -- ':(exclude)<p>'`` needs to leave out everything ``pattern`` names.
+
+    A plain pathspec matches a directory by prefix, but one with a wildcard must match the whole
+    path, and ``**/`` there always wants a directory: ``svc/**/fixtures/`` (a nested file's
+    ``**/fixtures/``) excluded nothing, and ``**/generated/**`` missed a top-level ``generated/``.
+    So a wildcard pattern naming a directory also gets ``**`` after it, and every ``**/`` also
+    stands for no directory at all."""
+    base = pattern
+    if any(c in base for c in "*?[") and base.endswith("/"):
+        base += "**"
+    out: list[str] = []
+    todo = [base]
+    while todo and len(out) < 16:
+        p = todo.pop()
+        if p in out:
+            continue
+        out.append(p)
+        start = p.find("**/")
+        while start != -1:
+            todo.append(p[:start] + p[start + 3:])
+            start = p.find("**/", start + 1)
+    return out
+
+
 def merge(per_file: list[dict]) -> dict:
     """One value per setting for the whole change: whatever asks for more review."""
     out: dict = {}
@@ -673,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root, defaults = repo_root(a.root), Path(a.defaults)
         if a.command == "skip":
-            lines = Settings(Files(root)).skip()
+            lines = [spec for pattern in Settings(Files(root)).skip() for spec in pathspecs(pattern)]
             # bytes, so Windows writes no carriage return for the shell to keep in a pathspec
             sys.stdout.buffer.write("".join(f"{line}\n" for line in lines).encode("utf-8"))
             return 0
@@ -711,10 +736,14 @@ def main(argv: list[str] | None = None) -> int:
             got = json.loads(source)
             if got.get("status") not in (None, "ok"):
                 raise ConfigError(f"the rules could not be read: {got.get('error') or got.get('status')}")
-            path = ensure(root, defaults, "", RULES)
-            text, counts = sync_rules(path.read_text(encoding="utf-8"), got.get("rules"))
-            path.write_text(text, encoding="utf-8")
-            result = {"file": RULES, **counts}
+            if not got.get("rules") and not (root / RULES).exists():
+                # nothing to sync and nothing synced before: no file appears in the repository
+                result = {"file": RULES, "synced": 0, "added": [], "removed": [], "yours": 0, "written": False}
+            else:
+                path = ensure(root, defaults, "", RULES)
+                text, counts = sync_rules(path.read_text(encoding="utf-8"), got.get("rules"))
+                path.write_text(text, encoding="utf-8")
+                result = {"file": RULES, **counts, "written": True}
         else:
             directory = norm_dir(root, a.dir)
             path = ensure(root, defaults, directory, CONFIG)
