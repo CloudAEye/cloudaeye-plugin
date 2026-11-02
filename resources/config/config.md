@@ -1,7 +1,7 @@
 # CloudAEye settings
 
 <!-- A setting inside comment marks is not read. To change one, remove the marks around its
-     line, or run /cloudaeye:config.
+     line, or run /cloudaeye:config. The comment after a setting lists its options.
      This file covers its own directory and everything below it. A .cloudaeye.config further
      down wins over it, setting by setting. When a change touches files under different
      settings, it gets whichever asks for more review.
@@ -12,44 +12,56 @@
 ## Ultrareview
 
 ### Checks
-<!-- on | off. A check that is off is not run. With Review, AI slop score or Risk score off,
+<!-- A check set to false is not run. With Bugs, Security, AI slop score or Risk score false,
      nothing is approved automatically. -->
-<!-- - PR checklist: on -->
-<!-- - Review: on --> <!-- bugs and security -->
-<!-- - AI slop score: on -->
-<!-- - Risk score: on -->
-<!-- - Architecture: on -->
-<!-- - Control flow: on -->
-<!-- - Task check: on -->
+<!-- - PR checklist: true -->             <!-- true | false. Pull requests only -->
+<!-- - Bugs: true -->                     <!-- true | false -->
+<!-- - Security: true -->                 <!-- true | false. Includes leaked secrets -->
+<!-- - AI slop score: true -->            <!-- true | false -->
+<!-- - Risk score: true -->               <!-- true | false -->
+<!-- - Architecture: true -->             <!-- true | false -->
+<!-- - Control flow: true -->             <!-- true | false -->
+<!-- - Task check: true -->               <!-- true | false. Runs when a task is given -->
 
 ### Limits
-<!-- Hard limits: a change above any of these is never approved automatically. -->
-<!-- - Risk score: 40/100 -->
-<!-- - AI slop score: 50/100 -->
-<!-- - Review severity: medium | low -->
+<!-- Hard limits: a change above any of these is never approved automatically. Left out,
+     CloudAEye's own check applies. -->
+<!-- - Risk score: 40/100 -->             <!-- 0-100 -->
+<!-- - AI slop score: 50/100 -->          <!-- 0-100 -->
+<!-- - Review severity: medium -->        <!-- medium | low. The worst finding a change may have -->
 
-### Human reviewers
-<!-- Assign human review: true | false. With false, ultrareview names no reviewers;
-     the verdict still says when a human must look.
-     Max human reviewers to assign: 1 | 2 | 3. One is assigned unless your ultrareview
-     instructions ask for more. -->
-<!-- - Assign human review: true -->
-<!-- - Max human reviewers to assign: 2 -->
-
-### Ultrareview instructions
-<!-- Anything else, in plain words. Can ask for more review, never less. -->
-<!-- - Pull requests from the Platform team need two humans: one from the team, one from outside it. -->
-<!-- - Changes under `services/payments/` always need two humans. -->
-<!-- - Always ask for one human, even when CloudAEye approves. -->
+### Human review policy
+<!-- Pull requests only.
+     Auto-assign human reviewer: when CloudAEye does not approve a change automatically, it
+     names human reviewers for it on the pull request. With false it names nobody, and a human
+     must still look.
+     Max human reviewers to assign: one is named unless the instructions ask for more.
+     Instructions: plain words, as long as you like, carried on indented lines under the label.
+     They can ask for more review, never less. -->
+<!-- - Auto-assign human reviewer: true -->       <!-- true | false. Default true -->
+<!-- - Max human reviewers to assign: 3 -->       <!-- 1 | 2 | 3. Default 3 -->
+<!-- - Instructions: Changes under `services/payments/` always need two humans. Pull requests
+       from the Platform team need one reviewer from outside the team. -->
 
 
 ## Review
 <!-- /cloudaeye:inspect, /cloudaeye:security, /cloudaeye:review -->
 
 ### Severity floor
-<!-- Report only findings at or above: all | critical | high | medium | low.
-     Ultrareview ignores this. -->
-<!-- - Severity floor: all -->
+<!-- Report only findings at or above this. Ultrareview ignores it. -->
+<!-- - Severity floor: all -->            <!-- all | critical | high | medium | low. Default all -->
+
+### LLM
+<!-- Which models review the code, for the review commands and ultrareview's review; the other
+     commands use the console's models. Read from the repository's top-level file only.
+     Never put an API key here: anyone who can read the repository can read it. Add your key once
+     in the CloudAEye console: Settings > LLM > Bring your own LLM.
+     Left out, each setting uses the console's. A --model, --model-provider or --invert-model
+     option on a command wins for that run. -->
+<!-- - LLM: CloudAEye -->                 <!-- CloudAEye | your own -->
+<!-- - Provider: openai -->               <!-- your own only: openai | anthropic | azure | aws_bedrock | gcp_vertex | groq | deepseek -->
+<!-- - Model: gpt-6.1-terra -->           <!-- CloudAEye: a model the console offers. Your own: the provider's exact model name -->
+<!-- - Model inversion: true -->          <!-- true | false. When AI authorship is detected, a different model family reviews the code. A Model or Provider set here wins over it -->
 
 ### Paths never reviewed
 <!-- Before a commit only. One path or pattern per line, relative to this file's directory. -->
@@ -57,14 +69,11 @@
 
 
 ## Control flow
-<!-- /cloudaeye:control-flow. Ultrareview uses these too.
-     Effort: low | medium | high, how far the map follows calls.
-     Across repositories: yes | no. -->
-<!-- - Effort: medium -->
-<!-- - Across repositories: yes -->
+<!-- /cloudaeye:control-flow. Ultrareview uses these too. -->
+<!-- - Effort: medium -->                 <!-- low | medium | high. Default medium. How far the map follows calls -->
+<!-- - Across repositories: true -->      <!-- true | false. Default true -->
 
 
 ## Triage PRs
-<!-- /cloudaeye:triage-prs. Read from the repository's top-level file only.
-     OKRs: your team's key results, or a file that holds them. -->
-<!-- - OKRs: `docs/okrs-q4.md` -->
+<!-- /cloudaeye:triage-prs. Read from the repository's top-level file only. -->
+<!-- - OKRs: `docs/okrs-q4.md` -->        <!-- your team's key results in plain words, or a file that holds them -->

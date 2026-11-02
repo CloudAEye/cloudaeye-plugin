@@ -7,14 +7,20 @@ looks configured and is not); a directory's settings reaching a sibling director
 whole repository; a nested "paths never reviewed" pattern that git quietly ignores; a pull
 request loosening its own limits; and a sync that drops a rule the team wrote.
 """
+import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "cloudaeye_config.py"
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "cloudaeye_config.py"
+_spec = importlib.util.spec_from_file_location("cloudaeye_config", SCRIPT)
+CFG = sys.modules["cloudaeye_config"] = importlib.util.module_from_spec(_spec)   # dataclasses look it up
+_spec.loader.exec_module(CFG)
 
 
 def ce(root, *args, stdin=None):
@@ -130,7 +136,7 @@ def test_across_a_change_the_value_that_asks_for_more_review_wins(repo):
 
 def test_assigning_human_review_is_off_only_when_every_changed_files_settings_say_so(repo):
     ce(repo, "set", "--dir", "docs", "ultrareview.assign_reviewers=false")
-    assert "- Assign human review: false" in (repo / "docs" / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert "- Auto-assign human reviewer: false" in (repo / "docs" / ".cloudaeye.config").read_text(encoding="utf-8")
     assert ce_json(repo, "effective", "--", "docs/guide/b.md")["ultrareview"] == {"assign_reviewers": False}
     both = ce_json(repo, "effective", "--", "docs/guide/b.md", "src/a.py")
     assert "ultrareview" not in both, "true is the default; one file still wanting a reviewer keeps it"
@@ -143,14 +149,113 @@ def test_triage_reads_the_top_level_file_only(repo):
     assert ce_json(repo, "effective", "--", "docs/guide/b.md")["triage"] == {"okrs": "`docs/okrs.md`"}
 
 
-def test_a_comment_beside_a_setting_survives_setting_it_and_commenting_it_out(repo):
-    ce(repo, "set", "ultrareview.checks.review=off")
-    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
-    assert "- Review: off <!-- bugs and security -->" in text
-    ce(repo, "set", "ultrareview.checks.review=-")
-    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
-    assert "<!-- - Review: off --> <!-- bugs and security -->" in text
+def _line(repo, start, d=""):
+    text = (repo / d / ".cloudaeye.config").read_text(encoding="utf-8")
+    return next(ln for ln in text.splitlines() if ln.startswith(start))
+
+
+def test_the_options_beside_a_setting_survive_setting_it_and_commenting_it_out_and_stay_lined_up(repo):
+    ce(repo, "set", "ultrareview.checks.security=off")
+    column = _line(repo, "<!-- - Bugs:").index("<!-- true")
+    line = _line(repo, "- Security:")
+    assert line.startswith("- Security: false ") and line.endswith("<!-- true | false. Includes leaked secrets -->")
+    assert line.index("<!-- true") == column, "the options stay in their column"
+    ce(repo, "set", "ultrareview.checks.security=-")
+    line = _line(repo, "<!-- - Security:")
+    assert line.startswith("<!-- - Security: false -->") and line.index("<!-- true") == column
     assert "ultrareview" not in ce_json(repo, "effective"), "commented out again: the default"
+
+
+def test_a_yes_or_no_setting_is_written_true_or_false_and_older_words_still_read(repo):
+    ce(repo, "set", "ultrareview.checks.bugs=off", "control_flow.cross_repo=no", "ultrareview.assign_reviewers=False")
+    assert _line(repo, "- Bugs:").startswith("- Bugs: false")
+    assert _line(repo, "- Across repositories:").startswith("- Across repositories: false")
+    assert _line(repo, "- Auto-assign human reviewer:").startswith("- Auto-assign human reviewer: false")
+    out = ce_json(repo, "effective")
+    assert out["ultrareview"]["checks"] == {"bugs": False} and out["control_flow"] == {"cross_repo": False}
+    write(repo, ".cloudaeye.config", "## Control flow\n- Across repositories: yes\n## Ultrareview\n### Checks\n"
+                                     "- Bugs: on\n- Security: TRUE\n")
+    out = ce_json(repo, "effective")
+    assert out["control_flow"] == {"cross_repo": True} and out["ultrareview"]["checks"] == {"bugs": True,
+                                                                                            "security": True}
+    assert out["problems"] == []
+    assert "true or false" in ce_json(repo, "set", "ultrareview.checks.bugs=maybe")["error"]
+
+
+PARAGRAPH = ("Changes under `services/payments/` always need two humans. Pull requests from the Platform team "
+             "need one reviewer from outside the team, e.g. from Security.")
+
+
+def test_the_instructions_are_one_paragraph_carried_on_indented_lines(repo):
+    write(repo, ".cloudaeye.config",
+          "## Ultrareview\n### Human review policy\n- Max human reviewers to assign: 2\n"
+          "- Instructions: Changes under `services/payments/` always need two humans. Pull requests\n"
+          "  from the Platform team need one reviewer from outside the team, e.g. from Security.\n"
+          "  <!-- plain words -->\n"
+          "- Auto-assign human reviewer: true\n")
+    out = ce_json(repo, "effective")
+    assert out["ultrareview"]["instructions"] == [PARAGRAPH], "read whole, never split on its dots"
+    assert out["ultrareview"]["max_reviewers"] == 2 and out["ultrareview"]["assign_reviewers"] is True
+    assert out["problems"] == []
+
+
+def test_set_add_and_clear_rewrite_the_paragraph_in_place(repo):
+    ce(repo, "set", f"ultrareview.instructions={PARAGRAPH}")
+    lines = (repo / ".cloudaeye.config").read_text(encoding="utf-8").splitlines()
+    start = lines.index(next(ln for ln in lines if ln.startswith("- Instructions:")))
+    assert lines[start + 1].startswith("  ") and all(len(ln) <= 96 for ln in lines[start:start + 3]), \
+        "wrapped onto indented lines, to be read"
+    assert ce_json(repo, "effective")["ultrareview"]["instructions"] == [PARAGRAPH]
+    ce(repo, "add", "ultrareview.instructions", "Always one human for migrations.")
+    assert ce_json(repo, "effective")["ultrareview"]["instructions"] == [PARAGRAPH + " Always one human for migrations."]
+    ce(repo, "set", "ultrareview.instructions=Two humans for payments.")
+    assert ce_json(repo, "effective")["ultrareview"]["instructions"] == ["Two humans for payments."]
+    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert blank(text).count("- Instructions:") == 1 and "Platform" not in blank(text), "replaced, never kept twice"
+    ce(repo, "clear", "ultrareview.instructions")
+    assert "ultrareview" not in ce_json(repo, "effective")
+    assert "comment marks" in ce_json(repo, "set", "ultrareview.instructions=a --> b")["error"]
+    assert "at most 2000" in ce_json(repo, "set", "ultrareview.instructions=" + "x " * 1100)["error"]
+
+
+def blank(text):
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+def test_the_llm_is_read_from_the_top_level_file_only_and_the_key_never_goes_in_it(repo):
+    out = ce_json(repo, "set", "review.llm=Your Own", "review.provider=OpenAI", "review.model=`gpt-6.1-terra`",
+                  "review.invert_model=false")
+    assert out["values"]["review"] == {"llm": "your own", "provider": "openai", "model": "gpt-6.1-terra",
+                                       "invert_model": False}
+    assert ce_json(repo, "effective", "--", "docs/guide/b.md")["review"] == out["values"]["review"]
+    assert "top-level" in ce_json(repo, "set", "--dir", "docs", "review.model=other")["error"]
+    write(repo, "docs/.cloudaeye.config", "## Review\n### LLM\n- Model: other\n")
+    got = ce_json(repo, "effective", "--", "docs/guide/b.md")
+    assert got["review"]["model"] == "gpt-6.1-terra"
+    assert any("Model is read from the repository's top-level" in p for p in got["problems"])
+    assert "not one name" in ce_json(repo, "set", "review.model=two words")["error"]
+    assert "not one of" in ce_json(repo, "set", "review.provider=somewhere")["error"]
+
+
+def test_with_cloudaeyes_models_a_provider_is_left_out_and_said(repo):
+    ce(repo, "set", "review.llm=cloudaeye", "review.provider=azure", "review.model=gpt-6.1-terra")
+    out = ce_json(repo, "effective")
+    assert out["review"] == {"llm": "CloudAEye", "model": "gpt-6.1-terra"}
+    assert any("Provider is for your own LLM only" in p for p in out["problems"])
+
+
+def test_the_template_lists_every_setting_commented_out_with_its_options_beside_it(repo):
+    template = (ROOT / "resources" / "config" / "config.md").read_text(encoding="utf-8")
+    for s in CFG.SETTINGS:
+        if s.kind in ("list", "paragraph"):
+            assert f"<!-- - {s.label}:" in template, s.key
+            continue
+        line = next((ln for ln in template.splitlines() if ln.startswith(f"<!-- - {s.label}:")
+                     and CFG._find_line(template.split("\n"), s, *CFG._block(template.split("\n"), s))
+                     == template.split("\n").index(ln)), None)
+        assert line and re.search(r"-->\s+<!-- \S", line), f"{s.key}: commented out, its options beside it"
+    assert "API key" in template and "Never put an API key here" in template
+    assert ce_json(repo, "effective")["rules"] == [] and "review" not in ce_json(repo, "effective")
 
 
 def test_a_directory_rule_covers_that_directory_and_below_only(repo):
@@ -236,7 +341,7 @@ def test_a_byte_order_mark_and_windows_line_endings_read_like_any_file(repo, tmp
     """Notepad saves UTF-8 with a byte-order mark, which hid the first heading and with it the file."""
     (repo / ".cloudaeye.config").write_bytes(
         b"\xef\xbb\xbf## Ultrareview\r\n\r\n### Limits\r\n- Risk score: 40 / 100\r\n\r\n"
-        b"### Checks\r\n- Review: OFF <!-- bugs and security -->\r\n")
+        b"### Checks\r\n- Security: OFF <!-- true | false -->\r\n")
     (repo / "docs" / ".cloudaeye.rules").write_bytes(b"\xef\xbb\xbf## r5\r\nSynced rule.\r\n")
     for ref in ("", "base"):
         if ref:
@@ -244,7 +349,7 @@ def test_a_byte_order_mark_and_windows_line_endings_read_like_any_file(repo, tmp
             git(repo, "-c", "core.autocrlf=false", "commit", "-qm", "crlf")
             git(repo, "branch", "-q", "base")
         out = ce_json(repo, "effective", *(["--ref", ref] if ref else []))
-        assert out["ultrareview"] == {"limits": {"risk": 40}, "checks": {"review": False}}, ref
+        assert out["ultrareview"] == {"limits": {"risk": 40}, "checks": {"security": False}}, ref
         assert out["rules"] == [{"id": "r5", "text": "Synced rule.", "paths": ["docs/"]}], ref
         assert out["problems"] == [], ref
 
@@ -296,25 +401,30 @@ def test_a_directory_file_offers_no_triage_section_and_the_template_claims_nothi
     text = (repo / "docs" / ".cloudaeye.config").read_text(encoding="utf-8")
     assert text.startswith("# CloudAEye settings: docs/")
     assert "Triage" not in text, "triage reads the root file only"
+    assert "### LLM" not in text and "### Paths never reviewed" in text, "so does the LLM"
     ce(repo, "set", "ultrareview.max_reviewers=2")
     root_text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
-    assert "## Triage PRs" in root_text
+    assert "## Triage PRs" in root_text and "### LLM" in root_text
     assert "Every command posts" not in root_text, "the reviews and describe post nothing"
 
 
 def test_show_says_what_a_setting_is_when_no_file_names_it_and_never_a_limit_number(repo):
     rows = {r["key"]: r for r in ce_json(repo, "show")["settings"]}
-    assert rows["ultrareview.checks.review"]["default"] == "on"
+    assert rows["ultrareview.checks.bugs"]["default"] == rows["ultrareview.checks.security"]["default"] == "true"
+    assert rows["ultrareview.checks.bugs"]["options"] == ["true", "false"]
     assert rows["ultrareview.assign_reviewers"]["default"] == "true"
     assert rows["control_flow.effort"]["default"] == "medium"
+    assert rows["control_flow.cross_repo"]["options"] == ["true", "false"]
     assert rows["ultrareview.instructions"]["default"] == "none"
-    assert rows["ultrareview.instructions"]["options"] == ["plain sentences, one a line"]
+    assert rows["review.llm"]["options"] == ["CloudAEye", "your own"]
+    assert rows["review.model"]["default"] == "the console's setting"
     for limit in ("ultrareview.limits.risk", "ultrareview.limits.slop", "ultrareview.limits.severity"):
         assert rows[limit]["default"] == "CloudAEye's own check", "how that check is built is never printed"
 
 
 def test_a_mistyped_setting_name_suggests_the_real_one(repo):
-    write(repo, ".cloudaeye.config", "## Ultrareview\n### Limits\n- Risk: 40\n### Human reviewers\n- Max reviewers: 2\n")
+    write(repo, ".cloudaeye.config", "## Ultrareview\n### Limits\n- Risk: 40\n### Human review policy\n"
+                                     "- Max reviewers: 2\n")
     problems = ce_json(repo, "effective")["problems"]
     assert problems[0].endswith("did you mean 'Risk score'?")
     assert problems[1].endswith("did you mean 'Max human reviewers to assign'?")

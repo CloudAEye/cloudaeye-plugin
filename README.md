@@ -73,21 +73,30 @@ The pull request must be open, merge into your integrated branch, not come from 
 
 ```markdown
 ## Ultrareview
+### Checks
+- Security: true
 ### Limits
 - Risk score: 40/100
-### Human reviewers
+### Human review policy
 - Max human reviewers to assign: 2
-### Ultrareview instructions
-- Changes under services/payments/ always need two humans.
+- Instructions: Changes under `services/payments/` always need two humans. Pull requests
+  from the Platform team need one reviewer from outside the team.
+
+## Review
+### LLM
+- LLM: your own
+- Provider: openai
+- Model: gpt-6.1-terra
 ```
 
 - With neither file anywhere in the repository, every command uses CloudAEye's defaults with no rules.
 - A file covers its own directory and everything below it; one further down wins, setting by setting. A change spanning several gets whatever asks for more review.
 - Pull requests read the files from the target branch, so a pull request cannot loosen its own settings.
+- Yes-or-no settings are `true` or `false`. The LLM settings are read from the top-level file only, and your API key never goes in it: add it in the CloudAEye console.
 
 ### Reviewer model options
 
-`review`, `inspect` and `security` take `--model`, `--model-provider` and `--invert-model true|false` for one run, e.g. `/cloudaeye:inspect --model gpt`. Omitted options use your organisation's saved settings.
+`review`, `inspect`, `security` and `ultrareview` take `--model`, `--model-provider` and `--invert-model true|false` for one run, e.g. `/cloudaeye:inspect --model gpt`. An option you leave out comes from the LLM settings in `.cloudaeye.config`, then from your organisation's console.
 
 Every command in full: the [User Guide](https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html).
 

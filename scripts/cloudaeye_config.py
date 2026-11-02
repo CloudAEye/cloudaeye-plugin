@@ -10,19 +10,21 @@ Both are markdown. A new file starts from the plugin's template (resources/confi
 setting is commented out with its options beside it.
 
 Which settings apply to a change: each changed file takes the nearest value of each setting,
-walking up to the root; instructions, paths never reviewed and rules add up on the way. Across its
-files the change takes whatever asks for more review: the lowest limit, the most reviewers, the
-lowest severity floor, a check left on unless every file's settings turn it off. Triage reads the
-root file only. Before a commit the files are read from the working tree; on a pull request from
-its target branch (--ref), so a pull request cannot change its own settings.
+walking up to the root; instructions (a paragraph a file), paths never reviewed and rules add up on
+the way. Across its files the change takes whatever asks for more review: the lowest limit, the
+most reviewers, the lowest severity floor, a check left true unless every file's settings make it
+false. The LLM and triage read the root file only. Before a commit the files are read from the
+working tree; on a pull request from its target branch (--ref), so a pull request cannot change its
+own settings. A yes-or-no setting is written true or false.
 
 Commands, each printing JSON (skip prints lines):
   effective [--ref REF] [--files F|-] [-- PATH...]   the settings and rules that apply to a change
   skip                                    every directory's paths never reviewed, as git pathspecs, one per line
   show [--dir D]                          D's settings: options, its value, what it inherits
   set [--dir D] KEY=VALUE...              write values; VALUE "-" comments the setting out again
-  add [--dir D] KEY TEXT                  add a line to a list setting (instructions, skip)
-  clear [--dir D] KEY                     remove every line of a list setting
+                                          (the instructions: takes them out)
+  add [--dir D] KEY TEXT                  add a path to skip, or a sentence to the end of the instructions
+  clear [--dir D] KEY                     remove every path to skip, or the instructions
   rules [--dir D]                         the rules in D's .cloudaeye.rules
   sync-rules --file F|-                   your organisation's rules (review_rules' answer) into the root file
   add-rule [--dir D] --heading H --text T [--paths P,Q]   a rule of your own
@@ -53,37 +55,52 @@ class Setting:
     key: str
     section: str
     group: str            # the ### heading it sits under; "" for a section with none
-    label: str            # the text before ":"; "" for free lines (instructions)
-    kind: str             # onoff | yesno | truefalse | choice | score | number | text | list | lines
+    label: str            # the text before ":"
+    kind: str             # bool | choice | score | number | name | text | list | paragraph
     options: tuple = ()
     lo: int = 0
     hi: int = 0
-    note: str = ""        # a comment kept after the value, set or commented out
 
 
+PROVIDERS = ("openai", "anthropic", "azure", "aws_bedrock", "gcp_vertex", "groq", "deepseek")
 SETTINGS = (
-    Setting("ultrareview.checks.checklist", "Ultrareview", "Checks", "PR checklist", "onoff"),
-    Setting("ultrareview.checks.review", "Ultrareview", "Checks", "Review", "onoff", note="bugs and security"),
-    Setting("ultrareview.checks.slop", "Ultrareview", "Checks", "AI slop score", "onoff"),
-    Setting("ultrareview.checks.risk", "Ultrareview", "Checks", "Risk score", "onoff"),
-    Setting("ultrareview.checks.architecture", "Ultrareview", "Checks", "Architecture", "onoff"),
-    Setting("ultrareview.checks.control_flow", "Ultrareview", "Checks", "Control flow", "onoff"),
-    Setting("ultrareview.checks.task", "Ultrareview", "Checks", "Task check", "onoff"),
+    Setting("ultrareview.checks.checklist", "Ultrareview", "Checks", "PR checklist", "bool"),
+    Setting("ultrareview.checks.bugs", "Ultrareview", "Checks", "Bugs", "bool"),
+    Setting("ultrareview.checks.security", "Ultrareview", "Checks", "Security", "bool"),
+    Setting("ultrareview.checks.slop", "Ultrareview", "Checks", "AI slop score", "bool"),
+    Setting("ultrareview.checks.risk", "Ultrareview", "Checks", "Risk score", "bool"),
+    Setting("ultrareview.checks.architecture", "Ultrareview", "Checks", "Architecture", "bool"),
+    Setting("ultrareview.checks.control_flow", "Ultrareview", "Checks", "Control flow", "bool"),
+    Setting("ultrareview.checks.task", "Ultrareview", "Checks", "Task check", "bool"),
     Setting("ultrareview.limits.risk", "Ultrareview", "Limits", "Risk score", "score"),
     Setting("ultrareview.limits.slop", "Ultrareview", "Limits", "AI slop score", "score"),
     Setting("ultrareview.limits.severity", "Ultrareview", "Limits", "Review severity", "choice", ("medium", "low")),
-    Setting("ultrareview.assign_reviewers", "Ultrareview", "Human reviewers", "Assign human review", "truefalse"),
-    Setting("ultrareview.max_reviewers", "Ultrareview", "Human reviewers", "Max human reviewers to assign",
+    Setting("ultrareview.assign_reviewers", "Ultrareview", "Human review policy", "Auto-assign human reviewer",
+            "bool"),
+    Setting("ultrareview.max_reviewers", "Ultrareview", "Human review policy", "Max human reviewers to assign",
             "choice", ("1", "2", "3")),
-    Setting("ultrareview.instructions", "Ultrareview", "Ultrareview instructions", "", "lines"),
+    Setting("ultrareview.instructions", "Ultrareview", "Human review policy", "Instructions", "paragraph"),
     Setting("review.severity_floor", "Review", "Severity floor", "Severity floor", "choice",
             ("all", "critical", "high", "medium", "low")),
+    Setting("review.llm", "Review", "LLM", "LLM", "choice", ("CloudAEye", "your own")),
+    Setting("review.provider", "Review", "LLM", "Provider", "choice", PROVIDERS),
+    Setting("review.model", "Review", "LLM", "Model", "name"),
+    Setting("review.invert_model", "Review", "LLM", "Model inversion", "bool"),
     Setting("review.skip", "Review", "Paths never reviewed", "Skip", "list"),
     Setting("control_flow.effort", "Control flow", "", "Effort", "choice", ("low", "medium", "high")),
-    Setting("control_flow.cross_repo", "Control flow", "", "Across repositories", "yesno"),
+    Setting("control_flow.cross_repo", "Control flow", "", "Across repositories", "bool"),
     Setting("triage.okrs", "Triage PRs", "", "OKRs", "text"),
 )
 BY_KEY = {s.key: s for s in SETTINGS}
+#: read from the repository's top-level file only: one review runs on one model, and triage spans
+#: the repository
+LLM_KEYS = frozenset({"review.llm", "review.provider", "review.model", "review.invert_model"})
+#: the instructions are sent as written, one paragraph a file; the server reads no more than this
+MAX_PARAGRAPH = 2000
+
+
+def root_only(key: str) -> bool:
+    return key.startswith("triage.") or key in LLM_KEYS
 #: across a change's files, the value that asks for more review
 _LOWEST = {"ultrareview.limits.risk", "ultrareview.limits.slop", "ultrareview.limits.severity",
            "review.severity_floor"}
@@ -250,17 +267,31 @@ def value_of(s: Setting, raw: str):
     """The value as the other skills use it, or ``ConfigError`` naming the options."""
     text = raw.strip()
     low = text.lower()
-    if s.kind in ("onoff", "yesno", "truefalse"):
-        if low in ON:
+    if s.kind == "bool":
+        if low in ON:                  # on/yes as well: a file written before true/false still reads
             return True
         if low in OFF:
             return False
-        pair = {"onoff": "on or off", "yesno": "yes or no", "truefalse": "true or false"}[s.kind]
-        raise ConfigError(f"{s.label}: {text!r} is not {pair}")
+        raise ConfigError(f"{s.label}: {text!r} is not true or false")
     if s.kind == "choice":
-        if low not in s.options:
+        hit = next((o for o in s.options if o.lower() == low), None)
+        if hit is None:
             raise ConfigError(f"{s.label}: {text!r} is not one of {' | '.join(s.options)}")
-        return int(low) if low.isdigit() else low
+        return int(hit) if hit.isdigit() else hit
+    if s.kind == "name":
+        name = text.strip("`").strip()
+        if not name or any(c.isspace() for c in name):
+            raise ConfigError(f"{s.label}: {text!r} is not one name, like gpt-6.1-terra")
+        return name
+    if s.kind == "paragraph":
+        words = " ".join(text.split())
+        if not words:
+            raise ConfigError(f"{s.label}: no text")
+        if "<!--" in words or "-->" in words:
+            raise ConfigError(f"{s.label}: the text holds comment marks (<!-- or -->)")
+        if len(words) > MAX_PARAGRAPH:
+            raise ConfigError(f"{s.label}: {len(words)} characters; CloudAEye reads at most {MAX_PARAGRAPH}")
+        return words
     if s.kind == "score":
         m = re.match(r"^(\d{1,3})(?:\s*/\s*100)?$", text)
         if not m or not 0 <= int(m.group(1)) <= 100:
@@ -278,13 +309,27 @@ def value_of(s: Setting, raw: str):
     return text
 
 
+def _continuation(lines: list[str], i: int) -> int:
+    """The index past a paragraph setting's lines: the indented lines under it, up to a blank line,
+    the next item or a heading. ``lines`` has its comments blanked."""
+    j = i + 1
+    while j < len(lines) and lines[j].strip() and lines[j][:1].isspace() \
+            and not re.match(r"^\s*-\s", lines[j]) and not re.match(r"^\s*#", lines[j]):
+        j += 1
+    return j
+
+
 def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
     """``({key: value}, problems)`` for every setting written outside a comment."""
     values: dict = {}
     problems: list[str] = []
     seen: dict[str, int] = {}
     section = group = ""
-    for n, line in enumerate(blank_comments(text.lstrip("﻿")).split("\n"), 1):
+    lines = blank_comments(text.lstrip("﻿")).split("\n")
+    i = 0
+    while i < len(lines):
+        line, n = lines[i], i + 1
+        i += 1
         m = re.match(r"^(#{2,3})\s+(.+?)\s*$", line)
         if m:
             if m.group(1) == "##":
@@ -295,13 +340,23 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
         item = re.match(r"^\s*-\s+(.*\S)\s*$", line)
         if not item:
             continue
-        free = next((s for s in SETTINGS if s.kind == "lines" and s.section.lower() == section.lower()
-                     and s.group.lower() == group.lower()), None)
-        if free is not None:
-            values.setdefault(free.key, []).append(item.group(1))
-            continue
         kv = re.match(r"^([^:]+?)\s*:\s*(.*)$", item.group(1))
         setting = _find(section, group, kv.group(1)) if kv else None
+        if setting is not None and setting.kind == "paragraph":
+            end = _continuation(lines, n - 1)
+            raw = " ".join([kv.group(2)] + [ln.strip() for ln in lines[n:end]])
+            i = end
+            try:
+                value = value_of(setting, raw)
+            except ConfigError as exc:
+                problems.append(f"{source} line {n}: {exc}; it was left out")
+                continue
+            if setting.key in seen:
+                problems.append(f"{source} line {n}: {setting.label} are also written on line "
+                                f"{seen[setting.key]}; line {n} is used")
+            seen[setting.key] = n
+            values[setting.key] = value
+            continue
         if setting is None:
             hint = _nearest(section, kv.group(1)) if kv else ""
             problems.append(f"{source} line {n}: {item.group(1)!r} is not a setting here, so it was skipped{hint}")
@@ -345,9 +400,13 @@ class Settings:
         for directory in sorted(files.found):
             text = files.text(directory, CONFIG)
             if text is not None:
-                values, found = parse_config(text, f"{directory}/{CONFIG}" if directory else CONFIG)
+                source = f"{directory}/{CONFIG}" if directory else CONFIG
+                values, found = parse_config(text, source)
                 self.configs[directory] = values
                 self.problems += found
+                for key in sorted(k for k in values if directory and root_only(k)):
+                    self.problems.append(f"{source}: {BY_KEY[key].label} is read from the repository's "
+                                         f"top-level {CONFIG} only, so it was skipped")
 
     def chain(self, directory: str, upto: bool = True) -> tuple[dict, dict]:
         """``(values, where)`` in force in ``directory``: the nearest file wins, instructions add up.
@@ -358,11 +417,11 @@ class Settings:
         dirs = _ancestors(directory)
         for d in dirs if upto else dirs[:-1]:
             for key, value in self.configs.get(d, {}).items():
-                if key == "review.skip" or key.startswith("triage."):
+                if key == "review.skip" or root_only(key):
                     continue
-                if key == "ultrareview.instructions":
+                if key == "ultrareview.instructions":       # one paragraph a file, the root's first
                     values.setdefault(key, [])
-                    values[key] = values[key] + [v for v in value if v not in values[key]]
+                    values[key] = values[key] + ([value] if value not in values[key] else [])
                 else:
                     values[key] = value
                 where[key] = d
@@ -433,8 +492,8 @@ def merge(per_file: list[dict]) -> dict:
         got = [values.get(key) for values in per_file]
         known = [v for v in got if v is not None]
         s = BY_KEY[key]
-        if s.kind in ("onoff", "yesno", "truefalse"):
-            # off only when every changed file's settings turn it off; on is CloudAEye's default
+        if s.kind == "bool":
+            # false only when every changed file's settings say so; true is CloudAEye's default
             if all(v is False for v in got):
                 out[key] = False
             elif any(v is True for v in got):
@@ -464,7 +523,10 @@ def effective(root: Path, ref: str, changed: list[str]) -> dict:
     changed = sorted({p.strip().replace("\\", "/") for p in changed if p.strip()})
     per_file = [settings.chain(_dir_of(p))[0] for p in changed] or [settings.chain("")[0]]
     values = merge(per_file)
-    values.update({k: v for k, v in settings.configs.get("", {}).items() if k.startswith("triage.")})
+    values.update({k: v for k, v in settings.configs.get("", {}).items() if root_only(k)})
+    if values.get("review.llm") == "CloudAEye" and "review.provider" in values:
+        del values["review.provider"]
+        settings.problems.append(f"{CONFIG}: Provider is for your own LLM only; with LLM: CloudAEye it was left out")
     skip = settings.skip()
     if skip:
         values["review.skip"] = skip
@@ -486,14 +548,18 @@ def effective(root: Path, ref: str, changed: list[str]) -> dict:
     return out
 
 
-_OPTIONS = {"onoff": ["on", "off"], "yesno": ["yes", "no"], "truefalse": ["true", "false"], "score": ["0-100"],
-            "lines": ["plain sentences, one a line"], "list": ["paths or patterns, one a line"],
-            "text": ["text, or a file in backticks"]}
+_OPTIONS = {"bool": ["true", "false"], "score": ["0-100"],
+            "paragraph": ["plain words, as long as you like; they can ask for more review, never less"],
+            "list": ["paths or patterns, one a line"], "text": ["text, or a file in backticks"],
+            "name": ["a model the console offers, or your provider's exact model name"]}
 #: what a setting is when no file names it, as show prints it. The hard limits are CloudAEye's own
 #: check, and how that check is built is never printed.
-DEFAULTS = {"ultrareview.checks": "on", "ultrareview.assign_reviewers": "true", "ultrareview.max_reviewers": "3",
-            "ultrareview.instructions": "none", "review.severity_floor": "all", "review.skip": "none",
-            "control_flow.effort": "medium", "control_flow.cross_repo": "yes", "triage.okrs": "none"}
+DEFAULTS = {"ultrareview.checks": "true", "ultrareview.assign_reviewers": "true", "ultrareview.max_reviewers": "3",
+            "ultrareview.instructions": "none", "review.severity_floor": "all",
+            "review.llm": "the console's setting", "review.provider": "the console's setting",
+            "review.model": "the console's setting", "review.invert_model": "the console's setting",
+            "review.skip": "none", "control_flow.effort": "medium", "control_flow.cross_repo": "true",
+            "triage.okrs": "none"}
 
 
 def show(root: Path, directory: str) -> dict:
@@ -502,8 +568,8 @@ def show(root: Path, directory: str) -> dict:
     inherited, where = settings.chain(directory, upto=False)
     rows = []
     for s in SETTINGS:
-        if s.key.startswith("triage.") and directory:
-            continue                                     # triage reads the root file only
+        if root_only(s.key) and directory:
+            continue                                     # the LLM and triage read the root file only
         from_ = inherited.get(s.key)
         rows.append({
             "key": s.key, "section": s.section, "group": s.group, "label": s.label or s.group,
@@ -533,8 +599,10 @@ def ensure(root: Path, defaults: Path, directory: str, name: str) -> Path:
         if directory:
             text = path.read_text(encoding="utf-8-sig")
             if name == CONFIG:
-                # triage reads the root file only; a directory's file offering it would be a dead section
+                # the LLM and triage read the root file only; a directory's file offering them would be
+                # dead settings
                 text = re.sub(r"\n+## Triage PRs\n.*\Z", "\n", text, flags=re.S)
+                text = re.sub(r"\n### LLM\n.*?(?=\n### |\n## |\Z)", "", text, flags=re.S)
             lines = text.split("\n")
             if lines and lines[0].startswith("# "):
                 lines[0] = f"{lines[0]}: {directory}/"
@@ -565,41 +633,92 @@ def _line_re(s: Setting) -> re.Pattern:
 
 
 def _render(s: Setting, value) -> str:
-    if s.kind in ("onoff",):
-        return "on" if value else "off"
-    if s.kind == "yesno":
-        return "yes" if value else "no"
-    if s.kind == "truefalse":
+    if s.kind == "bool":
         return "true" if value else "false"
     if s.kind == "score":
         return f"{value}/100"
     return str(value)
 
 
+def _setting_line(s: Setting, line: str) -> tuple[bool, str] | None:
+    """``(commented, the comment after it)`` when ``line`` holds ``s``, else None.
+
+    The comment after a setting — its options — stays where it is whatever the value becomes,
+    and ``column`` keeps it lined up with the others."""
+    label = re.escape(s.label)
+    m = re.match(r"^\s*<!--\s*-\s*" + label + r"\s*:\s*.*?\s*-->(.*)$", line, re.I) \
+        or re.match(r"^\s*-\s*" + label + r"\s*:\s*[^<]*?\s*(<!--.*)?$", line, re.I)
+    if not m:
+        return None
+    return line.lstrip().startswith("<!--"), (m.group(1) or "")
+
+
+def _with_comment(body: str, line: str, after: str) -> str:
+    """``body``, then the comment that followed the setting on ``line``, at the same column."""
+    if not after.strip():
+        return body
+    column = len(line) - len(after.lstrip())
+    return body + " " * max(column - len(body), 1) + after.strip()
+
+
+def _paragraph(s: Setting, value: str) -> list[str]:
+    import textwrap
+
+    return textwrap.wrap(f"- {s.label}: {value}", width=96, subsequent_indent="  ",
+                         break_long_words=False, break_on_hyphens=False)
+
+
+def _find_line(lines: list[str], s: Setting, first: int, end: int) -> int | None:
+    """The line holding ``s`` in its block, written or commented out — not one inside a longer comment."""
+    inside = _comment_lines(lines)
+    return next((i for i in range(first + 1, end) if not inside[i] and _setting_line(s, lines[i])), None)
+
+
 def set_value(text: str, s: Setting, raw: str | None) -> str:
     """``text`` with ``s`` set to ``raw`` (checked), or commented out again when ``raw`` is None."""
-    if s.kind in ("list", "lines"):
+    if s.kind == "list":
         raise ConfigError(f"{s.key} holds lines: use add and clear")
     lines = text.split("\n")
     block = _block(lines, s)
     if block is None:
         raise ConfigError(f"the file has no {s.section}{' / ' + s.group if s.group else ''} section")
     first, end = block
-    pattern = _line_re(s)
-    inside = _comment_lines(lines)
-    hit = next((i for i in range(first + 1, end) if not inside[i] and pattern.match(lines[i])), None)
-    note = f" <!-- {s.note} -->" if s.note else ""
+    if s.kind == "paragraph":
+        return _set_paragraph(lines, s, first, end, raw)
+    hit = _find_line(lines, s, first, end)
     if raw is None:
-        if hit is not None and not pattern.match(lines[hit]).group(2):
-            current = blank_comments(lines[hit]).strip()       # the note stays outside, never nested
-            lines[hit] = f"<!-- {current} -->{note}"
+        if hit is not None:
+            commented, after = _setting_line(s, lines[hit])
+            if not commented:
+                body = blank_comments(lines[hit]).strip()       # the options stay outside, never nested
+                lines[hit] = _with_comment(f"<!-- {body} -->", lines[hit], after)
         return "\n".join(lines)
-    value = value_of(s, raw)
-    new = f"- {s.label}: {_render(s, value)}{note}"
+    body = f"- {s.label}: {_render(s, value_of(s, raw))}"
     if hit is not None:
-        lines[hit] = new
+        lines[hit] = _with_comment(body, lines[hit], _setting_line(s, lines[hit])[1])
     else:
-        lines.insert(_last(lines, first, end) + 1, new)
+        lines.insert(_last(lines, first, end) + 1, body)
+    return "\n".join(lines)
+
+
+def _written_paragraph(lines: list[str], s: Setting, first: int, end: int) -> tuple[int, int] | None:
+    """Where ``s``'s paragraph is written, outside comments: (its first line, the line past it)."""
+    blank = blank_comments("\n".join(lines)).split("\n")
+    for i in range(first + 1, end):
+        if re.match(r"^\s*-\s*" + re.escape(s.label) + r"\s*:", blank[i], re.I):
+            return i, _continuation(blank, i)
+    return None
+
+
+def _set_paragraph(lines: list[str], s: Setting, first: int, end: int, raw: str | None) -> str:
+    """The paragraph replaced by ``raw``, wrapped under its label; ``None`` takes it out."""
+    new = [] if raw is None else _paragraph(s, value_of(s, raw))
+    at = _written_paragraph(lines, s, first, end)
+    if at is not None:
+        lines[at[0]:at[1]] = new
+    elif new:
+        after = _last(lines, first, end) + 1
+        lines[after:after] = new
     return "\n".join(lines)
 
 
@@ -621,28 +740,31 @@ def _last(lines: list[str], first: int, end: int) -> int:
 
 
 def add_line(text: str, s: Setting, value: str) -> str:
-    if s.kind not in ("list", "lines"):
+    """A line added to a list (paths never reviewed), or a sentence added to the end of a paragraph."""
+    if s.kind not in ("list", "paragraph"):
         raise ConfigError(f"{s.key} is one value: use set")
     value = " ".join(value.split())
     if not value:
         raise ConfigError("nothing to add")
+    if s.kind == "paragraph":
+        current, _ = parse_config(text)
+        before = current.get(s.key)
+        return set_value(text, s, f"{before} {value}" if before else value)
     lines = text.split("\n")
     block = _block(lines, s)
     if block is None:
         raise ConfigError(f"the file has no {s.section} / {s.group} section")
     first, end = block
-    if s.kind == "list":
-        value = value.strip("`")
-        _under("", value)                                 # a path inside the repository, or refused
-        new = f"- {s.label}: `{value}`"
-    else:
-        new = f"- {value}"
-    lines.insert(_last(lines, first, end) + 1, new)
+    value = value.strip("`")
+    _under("", value)                                     # a path inside the repository, or refused
+    lines.insert(_last(lines, first, end) + 1, f"- {s.label}: `{value}`")
     return "\n".join(lines)
 
 
 def clear_lines(text: str, s: Setting) -> str:
-    if s.kind not in ("list", "lines"):
+    if s.kind == "paragraph":
+        return set_value(text, s, None) if _block(text.split("\n"), s) else text
+    if s.kind != "list":
         raise ConfigError(f"{s.key} is one value: use set with -")
     lines = text.split("\n")
     block = _block(lines, s)
@@ -650,7 +772,7 @@ def clear_lines(text: str, s: Setting) -> str:
         return text
     first, end = block
     inside = _comment_lines(lines)
-    item = _line_re(s) if s.kind == "list" else re.compile(r"^\s*-\s+\S")
+    item = _line_re(s)
     keep = [ln for i, ln in enumerate(lines)
             if not (first < i < end and not inside[i] and not ln.lstrip().startswith("<!--") and item.match(ln))]
     return "\n".join(keep)
@@ -796,8 +918,9 @@ def main(argv: list[str] | None = None) -> int:
                     key, sep, raw = pair.partition("=")
                     if not sep or key not in BY_KEY:
                         raise ConfigError(f"{pair!r} is not KEY=VALUE with a known key")
-                    if key.startswith("triage.") and directory:
-                        raise ConfigError("triage settings are read from the root file only")
+                    if root_only(key) and directory:
+                        raise ConfigError(f"{BY_KEY[key].label} is read from the repository's top-level "
+                                          f"{CONFIG} only")
                     text = set_value(text, BY_KEY[key], None if raw.strip() == "-" else raw)
             elif a.command == "add":
                 if len(a.args) != 2 or a.args[0] not in BY_KEY:

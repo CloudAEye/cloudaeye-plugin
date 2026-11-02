@@ -62,8 +62,9 @@ These options apply only to this invocation; they never change saved settings.
 | `--model-provider` | `model_provider` | Hosting provider (for example, `azure`). |
 | `--invert-model` | `invert_model` | Boolean `true` or `false`, never a string. |
 
-Omit every option the user did not supply. In particular, omitted `invert_model`
-uses the tenant's saved inversion setting, not a client-side default. When
+An option the user did not supply comes from the repository's LLM settings when
+they set it (see **Your settings**); otherwise omit it. In particular, an omitted
+`invert_model` uses the tenant's saved inversion setting, not a client-side default. When
 inversion is enabled, this Claude Code flow uses the configured GPT reviewer.
 An explicit model or provider takes precedence over inversion. Pass all supplied
 options to the server; it resolves supported models, providers, and credentials.
@@ -180,10 +181,14 @@ and below. Step 1 reads the ones that apply to this change's files — from the 
 tree before a commit, from the target branch on a pull request — and prints them as
 JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without them
 (say so in one line). Print each of `problems` once, and on a pull request `pending`
-(*this pull request changes <files>; they apply once merged*). Three apply here:
+(*this pull request changes <files>; they apply once merged*). Four apply here:
 
 - **`SETTINGS.review.severity_floor`** — the floor when the user gave no severity flag
   (`all` means none). A flag always wins.
+- **`SETTINGS.review`'s LLM settings** — each when the user gave no option for it:
+  `model` as `review_model`, `provider` as `model_provider` (present only with `llm`
+  set to `your own`), `invert_model` as `invert_model`. A flag always wins; say once
+  which came from your settings. The API key is never in the files; it is the console's.
 - **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
   commit only; on a pull request the server reads the whole pull request.
 - **`SETTINGS.rules`** — your team's review rules, passed as `rules` (step 3).
@@ -300,7 +305,7 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Without a flag, `SETTINGS.review.severity_floor` when it is set and not `all`, and say once that the floor came from your settings. Omit it otherwise; never default to a floor nobody asked for.
    - `rules`: `SETTINGS.rules` when there are any — each `{id, text, paths}` as given. `rules_problems` in the answer names any left out; say so.
    - Scope label: when your settings left files out, `context.scope_path` is `"<the path, or the whole change> except <the patterns, comma-separated>"`.
-   - `review_model`, `model_provider`, `invert_model`: only when explicitly supplied, using the mappings in **Model options** above. These are top-level tool arguments, not fields inside `context`.
+   - `review_model`, `model_provider`, `invert_model`: the user's option when supplied, using the mappings in **Model options** above; otherwise the matching LLM setting when set (**Your settings**); omitted otherwise. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title`. Do not pass `review_config` or `report_types`; they override the profile and are how you accidentally ship a half-configured security pass.
 
    Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff`; it is pre-approved in this skill's frontmatter.

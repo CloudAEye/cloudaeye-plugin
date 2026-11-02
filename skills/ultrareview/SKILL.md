@@ -67,12 +67,14 @@ Before anything runs, print this tree for the chosen mode with each node marked
 - `assign-reviewer` is marked **only if a human review is required**: it runs
   when the verdict at the end is *requires human review*, never when the change
   is approved for merge, and only on a pull request (on uncommitted changes:
-  *skipped: needs a pull request*). With **Assign human review** false in the
-  repository's settings it never runs (*skipped: turned off in the repository's
+  *skipped: needs a pull request*). With **Auto-assign human reviewer** false in
+  the repository's settings it never runs (*skipped: turned off in the repository's
   settings*).
 - The settings are read in step 1. A check they turn off is not run: say once,
   *Turned off in the repository's settings: …*, and its section in the report reads
   *skipped: turned off in the repository's settings* (see **Your settings** below).
+  With Bugs or Security off, `review` runs the other half alone, and its child
+  node reads *skipped: turned off in the repository's settings*.
 
 In pull-request mode, say once under the tree: *the report is posted on the
 pull request as one comment, as the other commands post their cards, and
@@ -91,9 +93,10 @@ Read them in this order:
    verbatim. Never summarise it.
 2. **Model options** — `--model` → `review_model`, `--model-provider` →
    `model_provider`, `--invert-model` → `invert_model` (boolean `true` or
-   `false`, never a string). They apply to **the review only**. Omit any the
-   user did not give. Reject a missing value, an unknown flag or another
-   inversion value before initializing anything.
+   `false`, never a string). They apply to **the review only**. One the user
+   did not give comes from the repository's LLM settings when they set it (see
+   **Your settings**), and is omitted otherwise. Reject a missing value, an
+   unknown flag or another inversion value before initializing anything.
 3. **Severity floor** — `--critical`, `--high`, `--medium` or `--low` →
    `min_severity` with the dashes stripped, for **the review only**. When one is
    given, say once: *the floor narrows the review, so the AI slop score cannot
@@ -181,11 +184,20 @@ say so in one line and run on CloudAEye's defaults. Say once, a line each:
 What they decide:
 
 - **`SETTINGS.ultrareview.checks`** — a check set to `false` is not run: skip its
-  step below. Review, AI slop and risk are what an approval rests on: with any of
-  them off, the verdict is a human review.
-- **`SETTINGS.ultrareview`** — the checks, hard limits, `max_reviewers` and instructions — goes
-  whole, as it is, as `policy` to `review_summary` (steps 10 and 12). Leave `policy`
-  out when it is absent.
+  step below. Bugs, Security, AI slop and risk are what an approval rests on: with
+  any of them false, the verdict is a human review. Bugs and Security are the two
+  halves of the review in step 2, and pick its profile: both true (or unset)
+  `"review"`; Bugs false `"security"`; Security false `"bugs"`; both false, skip
+  steps 2 and 9 (the AI slop score runs its own pass).
+- **`SETTINGS.ultrareview`** — the checks, hard limits, `assign_reviewers`,
+  `max_reviewers` and the instructions (a paragraph a settings file) — goes whole,
+  as it is, as `policy` to `review_summary` (steps 10 and 12). Leave `policy` out
+  when it is absent.
+- **`SETTINGS.review`'s LLM settings** — for the review in step 2 only, each when
+  the user gave no option for it: `model` as `review_model`, `provider` as
+  `model_provider` (present only with `llm` set to `your own`), `invert_model` as
+  `invert_model`. Say once which came from the settings. An option the user typed
+  always wins. The API key is never in the files; it is the console's.
 - **`SETTINGS.rules`** — the team's review rules — go as `rules` to the review
   (step 2) when there are any.
 - **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
@@ -347,11 +359,13 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
    `reused: true` means it already ran at this commit — nothing was billed or
    posted again, its report is already on the pull request, and step 4 is
    skipped.
-2. **The review** (unless turned off; then skip this step and step 9 — the AI
-   slop score runs its own pass). Call `mcp__plugin_cloudaeye_cloudaeye__inspect_diff` with
-   `session_id`, `intent`, `profile: "review"`, `min_severity` and the model
-   options only when given, `rules`: `SETTINGS.rules` when there are any, and
-   `context` (the scope label). Never pass `review_config` or `report_types`.
+2. **The review** (unless Bugs and Security are both turned off; then skip this
+   step and step 9 — the AI slop score runs its own pass). Call
+   `mcp__plugin_cloudaeye_cloudaeye__inspect_diff` with `session_id`, `intent`,
+   `profile` — `"review"`, or `"security"` / `"bugs"` when the settings turn the
+   other half off (see **Your settings**) — `min_severity`, the model options
+   (the user's, else the settings'), `rules`: `SETTINGS.rules` when there are
+   any, and `context` (the scope label). Never pass `review_config` or `report_types`.
    `rules_problems` in the answer names rules left out; say so in the Review section.
    **If it returns verdict `error` or a `degraded` block, the run failed:**
    every later step reads the same staged source. Still collect the checklist
@@ -592,6 +606,9 @@ does not render.
     committed credential has a clock on it; say so plainly when there is one),
     then application security, then LLM, AI-agent and MCP security, each under
     its own bold label.
+
+  A half the settings turned off reads *skipped: turned off in the repository's
+  settings* in place of its findings.
 
   List **every finding in full**: its `n.`, file:line, severity and title on one
   line; indented under it the explanation (`why`, or `description` /
