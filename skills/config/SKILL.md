@@ -126,9 +126,9 @@ Run `CE show DIR` and go through its `settings` section by section, in this orde
 |---|---|---|
 | 1 | Ultrareview — checks | PR checklist (`ultrareview.checks.checklist`), Bugs (`ultrareview.checks.bugs`), Security (`ultrareview.checks.security`), AI slop score (`ultrareview.checks.slop`), Risk score (`ultrareview.checks.risk`), Architecture (`ultrareview.checks.architecture`), Control flow (`ultrareview.checks.control_flow`), Task check (`ultrareview.checks.task`) — true or false |
 | 2 | Ultrareview — limits | Risk score (`ultrareview.limits.risk`), AI slop score (`ultrareview.limits.slop`) — 0 to 100; Review severity (`ultrareview.limits.severity`) — medium or low |
-| 3 | Ultrareview — human review policy | Auto-assign human reviewer (`ultrareview.assign_reviewers`) — true or false; Max human reviewers to assign (`ultrareview.max_reviewers`) — 1, 2 or 3; Instructions (`ultrareview.instructions`) — one paragraph in plain words |
+| 3 | Ultrareview — human review policy | Auto-assign human reviewer (`ultrareview.assign_reviewers`) — true or false; Max human reviewers to assign (`ultrareview.max_reviewers`) — 1, 2 or 3, 1 by default; Instructions (`ultrareview.instructions`) — one paragraph in plain words |
 | 4 | Review | Severity floor (`review.severity_floor`) — all, critical, high, medium, low; Paths never reviewed (`review.skip`) |
-| 5 | Review — LLM | LLM (`review.llm`) — CloudAEye or your own; Provider (`review.provider`) — your own only; Model (`review.model`) — one name; Model inversion (`review.invert_model`) — true or false |
+| 5 | Review — LLM | LLM (`review.llm`) — CloudAEye or your own; Provider (`review.provider`) — your own only; Model (`review.model`) — one name; Model inversion (`review.invert_model`) — true or false; API key (`review.api_key`) — your own with openai, anthropic or deepseek: an environment variable that holds the key, like `$OPENAI_API_KEY`, or the key |
 | 6 | Control flow | Effort (`control_flow.effort`) — low, medium or high; Across repositories (`control_flow.cross_repo`) — true or false |
 | 7 | Triage PRs | OKRs (`triage.okrs`) — text, or a file in the repository |
 
@@ -145,7 +145,8 @@ section means:
    findings always need a human too, such as a leaked secret or a Critical issue.*
 3. *On a pull request that is not approved, ultrareview names human reviewers (true by
    default; with false it names nobody and a human must still look) — one, unless the
-   instructions ask for more, and never more than the maximum. The instructions are one
+   instructions ask for more, and never more than the maximum (one by default, so an
+   instruction asking for two needs a maximum of 2 or 3). The instructions are one
    paragraph in plain words, for example "Changes under `services/payments/` always need
    two humans." They can ask for more review, never less; team names are the ones in the
    Teams section of OWNERS.md; a directory's instructions add to the root's.*
@@ -153,9 +154,10 @@ section means:
    level; ultrareview ignores it. Paths never reviewed are relative to this directory
    and left out of the change before it is uploaded, before a commit only.*
 5. *Which models review the code, for the review commands and ultrareview's review.
-   CloudAEye uses CloudAEye's models; your own uses your account with a provider. Your
-   API key never goes in this file — anyone who can read the repository could read it;
-   it is added once in the CloudAEye console. Model inversion: when AI authorship is
+   CloudAEye uses CloudAEye's models; your own uses your account with a provider. The API
+   key is best written as an environment variable that holds it, like `$OPENAI_API_KEY`:
+   the key itself in this file can be read by anyone who can read the repository. Left
+   out, the key saved in the console is used. Model inversion: when AI authorship is
    detected, a different model family reviews the code; a Model or Provider set here
    wins over it. Left out, each uses the console's setting.*
 6. *How much effort the control-flow map spends following calls, and whether it looks
@@ -177,9 +179,12 @@ which double quotes would run as commands:
 - a path never reviewed → `CE add DIR review.skip '<path>'`, one call each; to replace
   them all, `CE clear DIR review.skip` first; to remove one, clear and add back the rest.
 
-With **LLM: your own** written, say once: *Add your API key in the CloudAEye console, not
-here: https://console.cloudaeye.com/code-review/settings?tab=LLM (Settings → LLM → Bring
-your own LLM; on a self-hosted console, the same page there).*
+With **LLM: your own** written and no API key, say once: *Your key can be named here as an
+environment variable, like `$OPENAI_API_KEY`, set on each developer's machine; or add it
+once in the console settings: https://console.cloudaeye.com/code-review/settings?tab=LLM
+(Settings → LLM → Bring your own LLM; on a self-hosted deployment, the same page there).* A key
+in the file works with Provider openai, anthropic or deepseek only; for the others, the
+console's.
 
 Write only what the user asked for, in their words for instructions — never reword an
 instruction into a stricter or looser one. An answer that is not one of the options
@@ -213,9 +218,11 @@ Print:
 
 - Write only `.cloudaeye.config` and `.cloudaeye.rules`, only through `CE`, and never
   under `${CLAUDE_PLUGIN_ROOT}`. Never commit or push them yourself.
-- Never change a setting the user did not ask about, and never put a secret, token,
-  password or API key in these files: they are committed. When the user pastes an API
-  key, write it nowhere: tell them to add it in the console instead, and that it is now
-  in this conversation, so they may want to rotate it.
+- Never change a setting the user did not ask about, and never put a secret, token or
+  password in these files: they are committed. The API key setting is the one exception,
+  and its environment-variable form (`$OPENAI_API_KEY`) is the one to offer. When the user
+  pastes a key itself, write it only after they confirm, having said once that anyone who
+  can read the repository can read it; say too that it is now in this conversation, so
+  they may want to rotate it. Never print a key back: `values` shows only where it comes from.
 - The limits are the user's own numbers. Never say how CloudAEye's scores are built
   or what its own limits are.

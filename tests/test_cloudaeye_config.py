@@ -222,7 +222,7 @@ def blank(text):
     return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
-def test_the_llm_is_read_from_the_top_level_file_only_and_the_key_never_goes_in_it(repo):
+def test_the_llm_is_read_from_the_top_level_file_only(repo):
     out = ce_json(repo, "set", "review.llm=Your Own", "review.provider=OpenAI", "review.model=`gpt-6.1-terra`",
                   "review.invert_model=false")
     assert out["values"]["review"] == {"llm": "your own", "provider": "openai", "model": "gpt-6.1-terra",
@@ -254,7 +254,7 @@ def test_the_template_lists_every_setting_commented_out_with_its_options_beside_
                      and CFG._find_line(template.split("\n"), s, *CFG._block(template.split("\n"), s))
                      == template.split("\n").index(ln)), None)
         assert line and re.search(r"-->\s+<!-- \S", line), f"{s.key}: commented out, its options beside it"
-    assert "API key" in template and "Never put an API key here" in template
+    assert "$OPENAI_API_KEY" in template and "can be read by anyone who can read the repository" in template
     assert ce_json(repo, "effective")["rules"] == [] and "review" not in ce_json(repo, "effective")
 
 
@@ -448,7 +448,7 @@ def test_show_says_what_a_setting_is_when_no_file_names_it_and_never_a_limit_num
     assert rows["control_flow.cross_repo"]["options"] == ["true", "false"]
     assert rows["ultrareview.instructions"]["default"] == "none"
     assert rows["review.llm"]["options"] == ["CloudAEye", "your own"]
-    assert rows["review.model"]["default"] == "the console's setting"
+    assert rows["review.model"]["default"] == "the console setting"
     for limit in ("ultrareview.limits.risk", "ultrareview.limits.slop", "ultrareview.limits.severity"):
         assert rows[limit]["default"] == "CloudAEye's own check", "how that check is built is never printed"
 
@@ -459,3 +459,108 @@ def test_a_mistyped_setting_name_suggests_the_real_one(repo):
     problems = ce_json(repo, "effective")["problems"]
     assert problems[0].endswith("did you mean 'Risk score'?")
     assert problems[1].endswith("did you mean 'Max human reviewers to assign'?")
+
+
+# ── the repository's own LLM key ─────────────────────────────────────────────
+
+KEY = "sk-test-0123456789abcdefTOPSECRET"
+TOKEN = "ab" * 32
+
+
+def _own_llm(repo, key=KEY, provider="openai"):
+    out = ce(repo, "set", "review.llm=your own", f"review.provider={provider}", "review.model=gpt-6.1-terra",
+             f"review.api_key={key}")
+    return out
+
+
+def test_an_api_key_is_never_printed_by_any_command(repo):
+    outputs = [_own_llm(repo).stdout, ce(repo, "show").stdout, ce(repo, "effective", "--", "src/a.py").stdout]
+    assert all(KEY not in out for out in outputs)
+    assert json.loads(outputs[0])["values"]["review"]["api_key"] == "written in the file"
+    row = next(r for r in json.loads(outputs[1])["settings"] if r["key"] == "review.api_key")
+    assert row["value"] == "written in the file" and row["default"] == "the key saved in the console settings"
+    assert json.loads(outputs[2])["review"]["api_key"] == {"from": "written in the file", "found": True}
+    assert KEY in (repo / ".cloudaeye.config").read_text(encoding="utf-8"), "a team may write it in the file"
+
+
+def test_a_key_that_is_mistyped_or_on_the_wrong_line_is_named_without_repeating_it(repo):
+    bad = ce(repo, "set", "review.api_key=has a space")
+    assert "has a space" not in bad.stdout and "not a key" in json.loads(bad.stdout)["error"]
+    write(repo, ".cloudaeye.config", f"## Ultrareview\n### Limits\n- API key: {KEY}\n- {KEY}\n")
+    out = ce(repo, "effective")
+    assert KEY not in out.stdout and len(json.loads(out.stdout)["problems"]) == 2
+
+
+def test_a_key_named_by_an_environment_variable_is_read_where_the_command_runs(repo, monkeypatch):
+    monkeypatch.delenv("CE_TEST_LLM_KEY", raising=False)
+    _own_llm(repo, key="$CE_TEST_LLM_KEY")
+    missing = ce_json(repo, "effective")
+    assert missing["review"]["api_key"] == {"from": "$CE_TEST_LLM_KEY", "found": False}
+    assert any("$CE_TEST_LLM_KEY is not set here" in p for p in missing["problems"])
+    monkeypatch.setenv("CE_TEST_LLM_KEY", KEY)
+    _own_llm(repo, key="${CE_TEST_LLM_KEY}")
+    found = ce(repo, "effective")
+    assert KEY not in found.stdout
+    assert json.loads(found.stdout)["review"]["api_key"] == {"from": "$CE_TEST_LLM_KEY", "found": True}
+
+
+def test_the_key_is_used_only_with_your_own_llm_and_a_provider_whose_credential_is_one_key(repo):
+    _own_llm(repo, provider="azure")
+    azure = ce_json(repo, "effective")
+    assert "api_key" not in azure["review"] and any("CloudAEye console settings" in p for p in azure["problems"])
+    ce(repo, "set", "review.llm=CloudAEye", "review.provider=-")
+    cloudaeye = ce_json(repo, "effective")
+    assert "api_key" not in cloudaeye["review"] and any("for your own LLM" in p for p in cloudaeye["problems"])
+
+
+@pytest.fixture
+def key_route():
+    """A stand-in for CloudAEye's key route on localhost: what it was sent, and what it answers."""
+    import http.server
+    import threading
+
+    got = {"answer": 200, "requests": []}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            got["requests"].append({"path": self.path, "token": self.headers.get("X-Key-Token"),
+                                    "body": json.loads(body)})
+            self.send_response(got["answer"])
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"stored": True} if got["answer"] == 200
+                                        else {"error": "invalid key token"}).encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    got["url"] = f"http://127.0.0.1:{server.server_port}/llm-key/s1"
+    yield got
+    server.shutdown()
+
+
+def test_the_key_is_sent_to_the_sessions_key_address_and_never_printed(repo, key_route, monkeypatch):
+    _own_llm(repo)
+    monkeypatch.setenv("CE_KEY_TOKEN", TOKEN)
+    out = ce(repo, "effective", "--send-key", key_route["url"], "--", "src/a.py")
+    assert KEY not in out.stdout and TOKEN not in out.stdout
+    assert json.loads(out.stdout)["review"]["api_key"] == {"from": "written in the file", "found": True, "sent": True}
+    assert key_route["requests"] == [{"path": "/llm-key/s1", "token": TOKEN, "body": {"api_key": KEY}}]
+
+    key_route["answer"] = 401
+    refused = ce_json(repo, "effective", "--send-key", key_route["url"])
+    assert refused["review"]["api_key"]["sent"] is False and "invalid key token" in refused["review"]["api_key"]["send_error"]
+    assert any("saved in the console settings is used" in p for p in refused["problems"])
+
+
+def test_the_key_goes_nowhere_but_https_or_this_machine(repo, key_route, monkeypatch):
+    _own_llm(repo)
+    monkeypatch.setenv("CE_KEY_TOKEN", TOKEN)
+    out = ce_json(repo, "effective", "--send-key", "http://example.com/llm-key/s1")
+    assert out["review"]["api_key"]["sent"] is False and "HTTPS" in out["review"]["api_key"]["send_error"]
+    monkeypatch.setenv("CE_KEY_TOKEN", "not-a-token")
+    assert ce_json(repo, "effective", "--send-key", key_route["url"])["review"]["api_key"]["sent"] is False
+    assert key_route["requests"] == []

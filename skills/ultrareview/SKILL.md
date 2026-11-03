@@ -37,44 +37,45 @@ produced. Never submit two session jobs together. A job that is still pending
 at its deadline ends the session chain: report every later step as *not run*
 and keep the job id.
 
-## The hierarchy
+## The checks
 
-Each result is built from the ones under it, and runs after them:
+One row per check in the settings (`## Ultrareview` > `### Checks`), in the same
+order and with the same names, then the human review. They run top to bottom:
 
 ```text
 /cloudaeye:ultrareview [path | #PR] [task:…]
-├── /cloudaeye:risk-score        risk and the approval verdict, built from:
-│   ├── /cloudaeye:check         PR checklist; supplies unit-test coverage (PR only, posts on the PR)
-│   ├── /cloudaeye:review        bugs and security in one pass; supplies Critical findings
-│   │   ├── /cloudaeye:inspect   bugs: run inside review, not again
-│   │   └── /cloudaeye:security  security and secrets: run inside review, not again
-│   └── /cloudaeye:slop-score    AI slop score; reuses the review's work
-├── /cloudaeye:review-arch       what the change does to the architecture
-├── /cloudaeye:control-flow      calls added, removed or moved
-├── /cloudaeye:check-task        only with task:…; uncommitted changes only
-└── /cloudaeye:assign-reviewer   only when a human review is required; pull requests only
+├── PR checklist    /cloudaeye:check             pull requests only; supplies unit-test coverage, posts its own comment
+├── Bugs            /cloudaeye:review            the review's bug half
+├── Security        /cloudaeye:review            the review's security half, leaked secrets included
+├── AI slop score   /cloudaeye:slop-score        reuses the review's work
+├── Risk score      /cloudaeye:risk-score        reads the rows above; decides the approval verdict
+├── Architecture    /cloudaeye:review-arch       what the change does to the architecture
+├── Control flow    /cloudaeye:control-flow      calls added, removed or moved
+├── Task check      /cloudaeye:check-task        only with task:…; uncommitted changes only
+└── Human review    /cloudaeye:assign-reviewer   only when a human review is required; pull requests only
 ```
 
-Before anything runs, print this tree for the chosen mode with each node marked
-**runs**, **inside review**, or **skipped** with its reason:
+Bugs and Security are one review call when both run, never two.
 
-- `check` needs a pull request. On uncommitted changes or a path it is
-  *skipped: pull requests only*, and `risk-score` still runs — on your change
+Before anything runs, print this tree for the chosen mode with each row marked
+**runs** or **skipped** with its reason:
+
+- **PR checklist** needs a pull request. On uncommitted changes or a path it is
+  *skipped: pull requests only*, and **Risk score** still runs — on your change
   before it is pushed, with you as the author and unit-test coverage reported as
   not measured.
-- `check-task` runs only when the user gave `task:`, and only outside
+- **Task check** runs only when the user gave `task:`, and only outside
   pull-request mode (*skipped: uncommitted changes only*).
-- `assign-reviewer` is marked **only if a human review is required**: it runs
+- **Human review** is marked **only if a human review is required**: it runs
   when the verdict at the end is *requires human review*, never when the change
   is approved for merge, and only on a pull request (on uncommitted changes:
   *skipped: needs a pull request*). With **Auto-assign human reviewer** false in
   the repository's settings it never runs (*skipped: turned off in the repository's
   settings*).
 - The settings are read in step 1. A check they turn off is not run: say once,
-  *Turned off in the repository's settings: …*, and its section in the report reads
-  *skipped: turned off in the repository's settings* (see **Your settings** below).
-  With Bugs or Security off, `review` runs the other half alone, and its child
-  node reads *skipped: turned off in the repository's settings*.
+  *Turned off in the repository's settings: …*, and its row and its section in the
+  report read *skipped: turned off in the repository's settings* (see **Your
+  settings** below). With Bugs or Security off, the review runs the other half alone.
 
 In pull-request mode, say once under the tree: *the report is posted on the
 pull request as one comment, as the other commands post their cards, and
@@ -197,7 +198,9 @@ What they decide:
   the user gave no option for it: `model` as `review_model`, `provider` as
   `model_provider` (present only with `llm` set to `your own`), `invert_model` as
   `invert_model`. Say once which came from the settings. An option the user typed
-  always wins. The API key is never in the files; it is the console's.
+  always wins. **An API key** in the settings is sent to CloudAEye by step 1 itself:
+  `SETTINGS.review.api_key` says only where it comes from, whether it was found and
+  whether it was `sent`. Never read, print or repeat the key, and never pass it to a tool.
 - **`SETTINGS.rules`** — the team's review rules — go as `rules` to the review
   (step 2) when there are any.
 - **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
@@ -234,16 +237,20 @@ wrong base branch, fork, over 50 files), and each names a different thing to
 do. Never review the working tree instead. On success, say which pull request
 this is (number, title, head SHA) and whether it is a draft. Then read your
 settings as the target branch has them, in one Bash call — `pull_request.base`
-as `BASE_BRANCH`, and each of `pull_request.files` in single quotes after `--`:
+as `BASE_BRANCH`, `key_url` and `key_token` as `start_session` returned them, and each of
+`pull_request.files` in single quotes after `--`:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)" || exit 1
 for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
 [ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
 BASE_BRANCH='<pull_request.base>'
+CE_KEY_URL='<key_url>'
+CE_KEY_TOKEN='<key_token>'
 case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
+case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
 echo "settings:"
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
+CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" --send-key "$CE_KEY_URL" -- '<path 1>' '<path 2>'
 ```
 
 **Working-tree and path modes only, to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
@@ -252,6 +259,8 @@ echo "settings:"
 CE_SESSION='<session_id>'
 CE_UPLOAD_URL='<upload_url>'
 CE_UPLOAD_TOKEN='<upload_token>'
+CE_KEY_URL='<key_url>'
+CE_KEY_TOKEN='<key_token>'
 TARGET='<validated target_branch or empty>'
 SCOPE='<the path the user gave, or empty for the whole change>'
 cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -290,8 +299,9 @@ UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o "$CE_TMP/upload.json" -w '%{http_co
 SAME=$(grep -o '"diff_unchanged": *\(true\|false\)' "$CE_TMP/upload.json" 2>/dev/null | grep -o 'true\|false' || echo unknown)
 echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
 echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP diff_unchanged=$SAME"
+case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
 echo "settings:"
-if [ -n "$PY" ]; then "$PY" "$CFG" effective --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
+if [ -n "$PY" ]; then CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "$CFG" effective --send-key "$CE_KEY_URL" --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
 ```
 
 Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -299,7 +309,7 @@ Read the two summary lines and the `start_session` result; don't re-derive them:
 | output | what to do with it |
 |---|---|
 | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-| `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
+| `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
 | `diff_bytes=0`, `scope=-` | Nothing pending — report "nothing to review" and stop. |
 | `diff_bytes=0` with a scope | Nothing has changed under that path. Say so **naming the path**, and stop. Never widen to the whole change. |
 | `diff_files` below `total_files` | A scoped run. Report both — "reviewed 2 of 7 changed files (src/auth/)" — and say the cross-file checks cannot see the excluded files. Every verdict below means *for that path*. |
@@ -365,7 +375,9 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
    `profile` — `"review"`, or `"security"` / `"bugs"` when the settings turn the
    other half off (see **Your settings**) — `min_severity`, the model options
    (the user's, else the settings'), `rules`: `SETTINGS.rules` when there are
-   any, and `context` (the scope label). Never pass `review_config` or `report_types`.
+   any, `llm_key: true` only when `SETTINGS.review.api_key.sent` is `true` and
+   `model_provider` is the settings' provider, and `context` (the scope label).
+   Never pass `review_config` or `report_types`.
    `rules_problems` in the answer names rules left out; say so in the Review section.
    **If it returns verdict `error` or a `degraded` block, the run failed:**
    every later step reads the same staged source. Still collect the checklist
@@ -600,9 +612,9 @@ does not render.
 - **Review.** First the `verdict` and the `counts` roll-up; `scope` when
   present; when a floor was applied, `min_severity` and `held_back` ("no
   findings at or above high, and four below it"). Then two nested collapsible
-  sections that mirror the hierarchy:
-  - **Bugs** (`/cloudaeye:inspect`'s area) — every `BUG_REPORT` finding;
-  - **Security** (`/cloudaeye:security`'s area) — leaked secrets **first** (a
+  sections, the Bugs and Security rows:
+  - **Bugs** — every `BUG_REPORT` finding;
+  - **Security** — leaked secrets **first** (a
     committed credential has a clock on it; say so plainly when there is one),
     then application security, then LLM, AI-agent and MCP security, each under
     its own bold label.

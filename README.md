@@ -92,7 +92,7 @@ The pull request must be open, merge into your integrated branch, not come from 
 - With neither file anywhere in the repository, every command uses CloudAEye's defaults with no rules.
 - A file covers its own directory and everything below it; one further down wins, setting by setting. A change spanning several gets whatever asks for more review.
 - Pull requests read the files from the target branch, so a pull request cannot loosen its own settings.
-- Yes-or-no settings are `true` or `false`. The LLM settings are read from the top-level file only, and your API key never goes in it: add it in the CloudAEye console.
+- Yes-or-no settings are `true` or `false`. The LLM settings are read from the top-level file only. With your own LLM, the API key can be named there as an environment variable (`$OPENAI_API_KEY`) or written as the key; the commands send it straight to CloudAEye and never print it. Left out, the key saved in the CloudAEye console is used.
 
 ### Reviewer model options
 

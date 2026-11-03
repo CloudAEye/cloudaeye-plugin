@@ -182,7 +182,10 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
 - **`SETTINGS.review`'s LLM settings** — each when the user gave no option for it:
   `model` as `review_model`, `provider` as `model_provider` (present only with `llm`
   set to `your own`), `invert_model` as `invert_model`. A flag always wins; say once
-  which came from your settings. The API key is never in the files; it is the console's.
+  which came from your settings. **An API key** in the settings is sent to CloudAEye by
+  step 1 itself: `SETTINGS.review.api_key` says only where it comes from, whether it was
+  found and whether it was `sent`. Never read, print or repeat the key, and never pass it
+  to a tool.
 - **Paths never reviewed** — step 1 leaves them out of the uploaded change, before a
   commit only; on a pull request the server reads the whole pull request.
 - **`SETTINGS.rules`** — your team's review rules, passed as `rules` (step 3).
@@ -206,16 +209,19 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
 
    On `status: error` in this mode, print the `error` field as written and stop. It is the eligibility refusal — closed pull request, wrong base branch, fork, or over the 50-file limit — and each names a different thing to do. Do not paraphrase it into "the PR could not be reviewed", and do not review the working tree instead.
 
-   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible. Then read your settings as the target branch has them, in one Bash call — `pull_request.base` as `BASE_BRANCH`, and each of `pull_request.files` in single quotes after `--`:
+   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible. Then read your settings as the target branch has them, in one Bash call — `pull_request.base` as `BASE_BRANCH`, `key_url` and `key_token` as `start_session` returned them, and each of `pull_request.files` in single quotes after `--`:
 
    ```bash
    cd "$(git rev-parse --show-toplevel)" || exit 1
    for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
    [ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
    BASE_BRANCH='<pull_request.base>'
+   CE_KEY_URL='<key_url>'
+   CE_KEY_TOKEN='<key_token>'
    case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
+   case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
    echo "settings:"
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" -- '<path 1>' '<path 2>'
+   CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" --send-key "$CE_KEY_URL" -- '<path 1>' '<path 2>'
    ```
 
    **Working-tree and path modes only, from here to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
@@ -224,6 +230,8 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    CE_SESSION='<session_id>'
    CE_UPLOAD_URL='<upload_url>'
    CE_UPLOAD_TOKEN='<upload_token>'
+   CE_KEY_URL='<key_url>'
+   CE_KEY_TOKEN='<key_token>'
    TARGET='<validated target_branch or empty>'
    SCOPE='<the path the user gave, or empty for the whole change>'
    cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -261,8 +269,9 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
      -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
    echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
    echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP"
+   case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
    echo "settings:"
-   if [ -n "$PY" ]; then "$PY" "$CFG" effective --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
+   if [ -n "$PY" ]; then CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "$CFG" effective --send-key "$CE_KEY_URL" --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
    ```
 
    Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -270,7 +279,7 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    | output | what to do with it |
    |---|---|
    | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `session_id=…` | Pass it to the MCP tool. |
    | `diff_bytes=0`, `scope=-` | Nothing pending — report "nothing to review" and stop. |
    | `diff_bytes=0` with a scope | Nothing has changed under that path. Say so **naming the path**, and stop. Do not widen to the whole change — they asked about one place. |
@@ -296,6 +305,7 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Without a flag, `SETTINGS.review.severity_floor` when it is set and not `all`, and say once that the floor came from your settings. Omit it otherwise; never default to a floor nobody asked for.
    - `rules`: `SETTINGS.rules` when there are any — each `{id, text, paths}` as given. `rules_problems` in the answer names any left out; say so.
    - Scope label: when your settings left files out, `context.scope_path` is `"<the path, or the whole change> except <the patterns, comma-separated>"`.
+   - `llm_key`: `true` only when `SETTINGS.review.api_key.sent` is `true` and `model_provider` is the settings' provider; omit it otherwise. Never pass the key itself.
    - `review_model`, `model_provider`, `invert_model`: the user's option when supplied, using the mappings in **Model options** above; otherwise the matching LLM setting when set (**Your settings**); omitted otherwise. These are top-level tool arguments, not fields inside `context`.
    - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed `approve` that does not say so is the one result that misleads. Otherwise only `pr_title` / `pr_description`. Do not pass `review_config` or `report_types`; either one overrides the profile and narrows the review you were asked to run.
 

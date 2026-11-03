@@ -18,7 +18,9 @@ working tree; on a pull request from its target branch (--ref), so a pull reques
 own settings. A yes-or-no setting is written true or false.
 
 Commands, each printing JSON (skip prints lines):
-  effective [--ref REF] [--files F|-] [-- PATH...]   the settings and rules that apply to a change
+  effective [--ref REF] [--files F|-] [--send-key URL] [-- PATH...]
+                                          the settings and rules that apply to a change; with --send-key,
+                                          the file's API key goes to that address and is never printed
   skip                                    every directory's paths never reviewed, as git pathspecs, one per line
   show [--dir D]                          D's settings: options, its value, what it inherits
   set [--dir D] KEY=VALUE...              write values; VALUE "-" comments the setting out again
@@ -88,6 +90,7 @@ SETTINGS = (
     Setting("review.provider", "Review", "LLM", "Provider", "choice", PROVIDERS),
     Setting("review.model", "Review", "LLM", "Model", "name"),
     Setting("review.invert_model", "Review", "LLM", "Model inversion", "bool"),
+    Setting("review.api_key", "Review", "LLM", "API key", "secret"),
     Setting("review.skip", "Review", "Paths never reviewed", "Skip", "list"),
     Setting("control_flow.effort", "Control flow", "", "Effort", "choice", ("low", "medium", "high")),
     Setting("control_flow.cross_repo", "Control flow", "", "Across repositories", "bool"),
@@ -96,9 +99,15 @@ SETTINGS = (
 BY_KEY = {s.key: s for s in SETTINGS}
 #: read from the repository's top-level file only: one review runs on one model, and triage spans
 #: the repository
-LLM_KEYS = frozenset({"review.llm", "review.provider", "review.model", "review.invert_model"})
+LLM_KEYS = frozenset({"review.llm", "review.provider", "review.model", "review.invert_model", "review.api_key"})
 #: the instructions are sent as written, one paragraph a file; the server reads no more than this
 MAX_PARAGRAPH = 2000
+#: the providers whose whole credential is one key; the others keep theirs in the console
+KEY_PROVIDERS = ("openai", "anthropic", "deepseek")
+#: an API key is written as the key, or as an environment variable that holds it ($NAME or ${NAME})
+_ENV_REF = re.compile(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$")
+_KEY_SHAPE = re.compile(r"^[\x21-\x7e]{8,1024}$")
+KEY_HEADER = "X-Key-Token"
 
 
 def root_only(key: str) -> bool:
@@ -280,6 +289,12 @@ def value_of(s: Setting, raw: str):
         if hit is None:
             raise ConfigError(f"{s.label}: {text!r} is not one of {' | '.join(s.options)}")
         return int(hit) if hit.isdigit() else hit
+    if s.kind == "secret":
+        # Never repeated in a message: the value may be the key itself.
+        key = text.strip("`").strip().strip("\"'")
+        if not (_ENV_REF.match(key) or _KEY_SHAPE.match(key)) or key.startswith("<!--"):
+            raise ConfigError(f"{s.label}: not a key, nor an environment variable like $OPENAI_API_KEY")
+        return key
     if s.kind == "name":
         name = text.strip("`").strip()
         if not name or any(c.isspace() for c in name):
@@ -361,7 +376,9 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
             continue
         if setting is None:
             hint = _nearest(section, kv.group(1)) if kv else ""
-            problems.append(f"{source} line {n}: {item.group(1)!r} is not a setting here, so it was skipped{hint}")
+            # the label only: a key written on the wrong line must not be repeated
+            what = repr(kv.group(1)) if kv else "it"
+            problems.append(f"{source} line {n}: {what} is not a setting here, so it was skipped{hint}")
             continue
         try:
             value = value_of(setting, kv.group(2))
@@ -377,6 +394,49 @@ def parse_config(text: str, source: str = CONFIG) -> tuple[dict, list[str]]:
             seen[setting.key] = n
             values[setting.key] = value
     return values, problems
+
+
+def key_source(value: str) -> str:
+    """Where an API key setting takes its key from, in words that never hold the key."""
+    m = _ENV_REF.match(value or "")
+    return f"${m.group(1)}" if m else "written in the file"
+
+
+def resolve_key(value: str) -> str:
+    """The key itself: the environment variable's value, or what the file holds. Never printed."""
+    m = _ENV_REF.match(value or "")
+    return os.environ.get(m.group(1), "").strip() if m else value
+
+
+def masked(values: dict) -> dict:
+    """``values`` safe to print: an API key becomes where it comes from."""
+    if "review.api_key" not in values:
+        return values
+    return {**values, "review.api_key": key_source(values["review.api_key"])}
+
+
+def send_key(url: str, token: str, key: str) -> tuple[bool, str]:
+    """Send the key to CloudAEye's key route for this session. ``(sent, why not)``; the key is never echoed."""
+    import urllib.error
+    import urllib.request
+
+    if not re.match(r"^(https://|http://(localhost|127\.0\.0\.1)(:\d+)?/)", url or ""):
+        return False, "the key address is not HTTPS"
+    if not re.fullmatch(r"[0-9A-Fa-f]{64}", token or ""):
+        return False, "the session's key token is missing"
+    request = urllib.request.Request(url, data=json.dumps({"api_key": key}).encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "application/json", KEY_HEADER: token})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status == 200, "" if response.status == 200 else f"HTTP {response.status}"
+    except urllib.error.HTTPError as exc:
+        try:
+            why = json.loads(exc.read().decode("utf-8")).get("error") or ""
+        except ValueError:
+            why = ""
+        return False, f"HTTP {exc.code}" + (f": {why}" if why else "")
+    except (urllib.error.URLError, OSError) as exc:
+        return False, f"CloudAEye could not be reached ({type(exc).__name__})"
 
 
 def nest(values: dict) -> dict:
@@ -516,7 +576,36 @@ def merge(per_file: list[dict]) -> dict:
     return out
 
 
-def effective(root: Path, ref: str, changed: list[str]) -> dict:
+def _api_key(values: dict, problems: list[str], key_url: str, key_token: str) -> dict | None:
+    """What the skills may know of the file's API key: where it comes from, whether it was found and
+    sent. Sent only to CloudAEye's key route for this session (``key_url``), never printed."""
+    raw = values.pop("review.api_key")
+    where = key_source(raw)
+    if values.get("review.llm") != "your own":
+        problems.append(f"{CONFIG}: API key is for your own LLM; with LLM: {values.get('review.llm') or 'not set'} "
+                        "it is not used")
+        return None
+    provider = values.get("review.provider")
+    if provider not in KEY_PROVIDERS:
+        problems.append(f"{CONFIG}: an API key in the file works with Provider {', '.join(KEY_PROVIDERS)}; "
+                        f"{provider or 'no provider'} takes its credentials in the CloudAEye console settings, so the key "
+                        "here is not used")
+        return None
+    key = resolve_key(raw)
+    status = {"from": where, "found": bool(key) and bool(_KEY_SHAPE.match(key))}
+    if not key:
+        problems.append(f"{CONFIG}: API key: {where} is not set here, so the key saved in the console settings is used")
+    elif not status["found"]:
+        problems.append(f"{CONFIG}: API key: {where} does not hold a key, so the key saved in the console settings is used")
+    elif key_url:
+        status["sent"], why = send_key(key_url, key_token, key)
+        if why:
+            status["send_error"] = why
+            problems.append(f"the API key could not be sent to CloudAEye ({why}), so the key saved in the console settings is used")
+    return status
+
+
+def effective(root: Path, ref: str, changed: list[str], key_url: str = "", key_token: str = "") -> dict:
     fetched = fetch(root, ref) if ref else False
     if ref and _git(root, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
         return {"source": ref, "rules": [], "files": [], "problems": [
@@ -529,6 +618,10 @@ def effective(root: Path, ref: str, changed: list[str]) -> dict:
     if values.get("review.llm") == "CloudAEye" and "review.provider" in values:
         del values["review.provider"]
         settings.problems.append(f"{CONFIG}: Provider is for your own LLM only; with LLM: CloudAEye it was left out")
+    if "review.api_key" in values:
+        status = _api_key(values, settings.problems, key_url, key_token)
+        if status:
+            values["review.api_key"] = status
     skip = settings.skip()
     if skip:
         values["review.skip"] = skip
@@ -553,13 +646,16 @@ def effective(root: Path, ref: str, changed: list[str]) -> dict:
 _OPTIONS = {"bool": ["true", "false"], "score": ["0-100"],
             "paragraph": ["plain words, as long as you like; they can ask for more review, never less"],
             "list": ["paths or patterns, one a line"], "text": ["text, or a file in backticks"],
-            "name": ["a model the console offers, or your provider's exact model name"]}
+            "name": ["a model the console offers, or your provider's exact model name"],
+            "secret": ["an environment variable that holds the key, like $OPENAI_API_KEY", "the key itself",
+                       f"your own LLM with Provider {', '.join(KEY_PROVIDERS)} only"]}
 #: what a setting is when no file names it, as show prints it. The hard limits are CloudAEye's own
 #: check, and how that check is built is never printed.
-DEFAULTS = {"ultrareview.checks": "true", "ultrareview.assign_reviewers": "true", "ultrareview.max_reviewers": "3",
+DEFAULTS = {"ultrareview.checks": "true", "ultrareview.assign_reviewers": "true", "ultrareview.max_reviewers": "1",
             "ultrareview.instructions": "none", "review.severity_floor": "all",
-            "review.llm": "the console's setting", "review.provider": "the console's setting",
-            "review.model": "the console's setting", "review.invert_model": "the console's setting",
+            "review.llm": "the console setting", "review.provider": "the console setting",
+            "review.model": "the console setting", "review.invert_model": "the console setting",
+            "review.api_key": "the key saved in the console settings",
             "review.skip": "none", "control_flow.effort": "medium", "control_flow.cross_repo": "true",
             "triage.okrs": "none"}
 
@@ -579,7 +675,7 @@ def show(root: Path, directory: str) -> dict:
                 [f"{s.lo}-{s.hi}"] if s.kind == "number" else []),
             "default": next((d for k, d in DEFAULTS.items() if s.key == k or s.key.startswith(k + ".")),
                             "CloudAEye's own check"),
-            "value": mine.get(s.key),
+            "value": key_source(mine[s.key]) if s.kind == "secret" and s.key in mine else mine.get(s.key),
             "inherited": from_,
             "inherited_from": ((where[s.key] + "/") if where.get(s.key) else "the root") if from_ is not None
             else None,
@@ -847,7 +943,7 @@ def seed(root: Path, defaults: Path, answer: str) -> dict:
         raise ConfigError("the settings answer is not the ultrareview_settings tool's JSON; nothing was written") \
             from None
     if not isinstance(got, dict) or got.get("status") not in (None, "ok"):
-        raise ConfigError(f"the console's settings could not be read: {(got or {}).get('error') or got}")
+        raise ConfigError(f"the console settings could not be read: {(got or {}).get('error') or got}")
     settings = got.get("settings") if isinstance(got.get("settings"), dict) else {}
     if got.get("source") == "none" or not settings:
         return {"file": CONFIG, "source": got.get("source") or "none", "written": False, "set": [],
@@ -872,7 +968,7 @@ def seed(root: Path, defaults: Path, answer: str) -> dict:
     path.write_text(text, encoding="utf-8")
     values, found = parse_config(text)
     return {"file": CONFIG, "source": got.get("source"), "written": True, "set": written,
-            "values": nest(values), "problems": problems + found}
+            "values": nest(masked(values)), "problems": problems + found}
 
 
 # ── the commands ─────────────────────────────────────────────────────────────
@@ -894,6 +990,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dir", default="", help="the directory whose files to read or write; the root by default")
     parser.add_argument("--ref", default="", help="effective: read the files at this ref (origin/<target branch>)")
     parser.add_argument("--files", default="", help="effective: the changed paths, one per line, or - for stdin")
+    parser.add_argument("--send-key", default="",
+                        help="effective: start_session's key_url; the file's API key is sent there, with the "
+                             "key_token from CE_KEY_TOKEN, and never printed")
     parser.add_argument("--file", default="",
                         help="sync-rules / seed: the tool's answer (review_rules / ultrareview_settings), or - for stdin")
     parser.add_argument("--heading", default="", help="add-rule: the rule's title")
@@ -910,7 +1009,9 @@ def main(argv: list[str] | None = None) -> int:
         if a.command == "effective":
             if a.ref and (a.ref.startswith("-") or not _BRANCH.match(a.ref)):
                 raise ConfigError(f"{a.ref!r} is not a ref")
-            result = effective(root, a.ref, _changed(a.files) + a.args)
+            # the session's key token rides in the environment (CE_KEY_TOKEN), never in a printed argument
+            result = effective(root, a.ref, _changed(a.files) + a.args, a.send_key,
+                               os.environ.get("CE_KEY_TOKEN", "").strip())
         elif a.command == "show":
             result = show(root, norm_dir(root, a.dir))
         elif a.command == "rules":
@@ -978,7 +1079,8 @@ def main(argv: list[str] | None = None) -> int:
                 text = clear_lines(text, BY_KEY[a.args[0]])
             path.write_text(text, encoding="utf-8")
             values, problems = parse_config(text)
-            result = {"file": path.relative_to(root).as_posix(), "values": nest(values), "problems": problems}
+            result = {"file": path.relative_to(root).as_posix(), "values": nest(masked(values)),
+                      "problems": problems}
     except (ConfigError, OSError, ValueError) as exc:
         print(json.dumps({"error": str(exc)}))
         return 1

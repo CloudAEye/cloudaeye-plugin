@@ -5,8 +5,9 @@
      This file covers its own directory and everything below it. A .cloudaeye.config further
      down wins over it, setting by setting. When a change touches files under different
      settings, it gets whichever asks for more review.
-     Commit it. On a pull request, CloudAEye reads it from the target branch, so a pull request
-     cannot change its own settings. -->
+     A setting placed here overrides the same setting in CloudAEye's console settings.
+     On a pull request, CloudAEye reads it from the target branch, so a pull request cannot
+     change its own settings. -->
 
 
 ## Ultrareview
@@ -35,11 +36,12 @@
      Auto-assign human reviewer: when CloudAEye does not approve a change automatically, it
      names human reviewers for it on the pull request. With false it names nobody, and a human
      must still look.
-     Max human reviewers to assign: one is named unless the instructions ask for more.
+     Max human reviewers to assign: the most people named, one by default. One is named unless
+     the instructions ask for more, and never more than this.
      Instructions: plain words, as long as you like, carried on indented lines under the label.
      They can ask for more review, never less. -->
 <!-- - Auto-assign human reviewer: true -->       <!-- true | false. Default true -->
-<!-- - Max human reviewers to assign: 3 -->       <!-- 1 | 2 | 3. Default 3 -->
+<!-- - Max human reviewers to assign: 1 -->       <!-- 1 | 2 | 3. Default 1 -->
 <!-- - Instructions: Changes under `services/payments/` always need two humans. Pull requests
        from the Platform team need one reviewer from outside the team. -->
 
@@ -53,15 +55,18 @@
 
 ### LLM
 <!-- Which models review the code, for the review commands and ultrareview's review; the other
-     commands use the console's models. Read from the repository's top-level file only.
-     Never put an API key here: anyone who can read the repository can read it. Add your key once
-     in the CloudAEye console: Settings > LLM > Bring your own LLM.
-     Left out, each setting uses the console's. A --model, --model-provider or --invert-model
-     option on a command wins for that run. -->
+     commands use the models set in the console settings. Read from the repository's top-level
+     file only. Left out, each setting follows the console settings. A --model, --model-provider
+     or --invert-model option on a command wins for that run.
+     API key: with your own LLM and Provider openai, anthropic or deepseek. Write the name of an
+     environment variable that holds the key, like $OPENAI_API_KEY, so the key stays out of the
+     repository; a key written here can be read by anyone who can read the repository. Left out,
+     the key saved in the console settings is used (Settings > LLM > Bring your own LLM). -->
 <!-- - LLM: CloudAEye -->                 <!-- CloudAEye | your own -->
 <!-- - Provider: openai -->               <!-- your own only: openai | anthropic | azure | aws_bedrock | gcp_vertex | groq | deepseek -->
 <!-- - Model: gpt-6.1-terra -->           <!-- CloudAEye: a model the console offers. Your own: the provider's exact model name -->
 <!-- - Model inversion: true -->          <!-- true | false. When AI authorship is detected, a different model family reviews the code. A Model or Provider set here wins over it -->
+<!-- - API key: $OPENAI_API_KEY -->       <!-- your own only: an environment variable that holds the key, or the key -->
 
 ### Paths never reviewed
 <!-- Before a commit only. One path or pattern per line, relative to this file's directory. -->
