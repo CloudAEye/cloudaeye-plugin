@@ -315,6 +315,37 @@ def test_a_pull_request_cannot_loosen_its_own_settings(repo, tmp_path):
 
 # ── the sync ─────────────────────────────────────────────────────────────────
 
+CONSOLE = {"status": "ok", "repo_full": "acme/svc", "source": "account", "settings": {
+    "ultrareview.checks.security": False, "ultrareview.limits.risk": 40, "ultrareview.limits.severity": "medium",
+    "ultrareview.assign_reviewers": False, "ultrareview.max_reviewers": 2,
+    "ultrareview.instructions": "Changes under `services/payments/` always need two humans."}}
+
+
+def test_seeding_writes_only_what_the_console_sets_and_reads_back_the_same(repo):
+    out = ce_json(repo, "seed", "--file", "-", stdin=json.dumps(CONSOLE))
+    assert out["written"] is True and out["source"] == "account" and out["problems"] == []
+    assert sorted(out["set"]) == sorted(CONSOLE["settings"])
+    got = ce_json(repo, "effective", "--", "src/a.py")["ultrareview"]
+    assert got == {"checks": {"security": False}, "limits": {"risk": 40, "severity": "medium"},
+                   "assign_reviewers": False, "max_reviewers": 2,
+                   "instructions": ["Changes under `services/payments/` always need two humans."]}
+    text = (repo / ".cloudaeye.config").read_text(encoding="utf-8")
+    assert "<!-- - Bugs: true -->" in text, "what the console leaves at its default stays commented out"
+
+
+def test_a_console_at_its_defaults_or_unreadable_writes_no_file(repo):
+    out = ce_json(repo, "seed", "--file", "-", stdin=json.dumps({**CONSOLE, "settings": {}}))
+    assert out["written"] is False and not (repo / ".cloudaeye.config").exists()
+    out = ce_json(repo, "seed", "--file", "-", stdin=json.dumps(
+        {"status": "ok", "source": "none", "settings": {}, "error": "review service returned 404"}))
+    assert out["written"] is False and out["problems"] == ["review service returned 404"]
+    assert "not the ultrareview_settings tool's JSON" in ce_json(repo, "seed", "--file", "-", stdin="nope")["error"]
+    out = ce_json(repo, "seed", "--file", "-", stdin=json.dumps(
+        {**CONSOLE, "settings": {"ultrareview.limits.risk": 140, "review.model": "x"}}))
+    assert out["set"] == [] and len(out["problems"]) == 2, "a bad value or a key it does not hold costs its line"
+    assert out["written"] is False and not (repo / ".cloudaeye.config").exists()
+
+
 def test_the_sync_creates_no_file_when_there_is_nothing_to_sync(repo):
     out = ce_json(repo, "sync-rules", "--file", "-", stdin=json.dumps({"status": "ok", "rules": []}))
     assert out["written"] is False and not (repo / ".cloudaeye.rules").exists()

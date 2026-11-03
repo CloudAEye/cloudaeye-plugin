@@ -27,6 +27,8 @@ Commands, each printing JSON (skip prints lines):
   clear [--dir D] KEY                     remove every path to skip, or the instructions
   rules [--dir D]                         the rules in D's .cloudaeye.rules
   sync-rules --file F|-                   your organisation's rules (review_rules' answer) into the root file
+  seed --file F|-                         the console's ultrareview settings (ultrareview_settings' answer)
+                                          into the root file
   add-rule [--dir D] --heading H --text T [--paths P,Q]   a rule of your own
 
 Runs locally with Python and git; the only network call is fetching the target branch for --ref.
@@ -833,6 +835,46 @@ def sync_rules(text: str, synced: list[dict]) -> tuple[str, dict]:
         "synced": len(fresh), "added": sorted(now - before), "removed": sorted(before - now), "yours": len(mine)}
 
 
+def seed(root: Path, defaults: Path, answer: str) -> dict:
+    """The console's ultrareview settings written into the root ``.cloudaeye.config``.
+
+    ``answer`` is the ``ultrareview_settings`` tool's JSON: only what the console sets apart from the
+    defaults, as this file's keys. Nothing to write creates no file; a key this script does not know,
+    or a value that is not one of its options, is left out and named."""
+    try:
+        got = json.loads(answer)
+    except ValueError:
+        raise ConfigError("the settings answer is not the ultrareview_settings tool's JSON; nothing was written") \
+            from None
+    if not isinstance(got, dict) or got.get("status") not in (None, "ok"):
+        raise ConfigError(f"the console's settings could not be read: {(got or {}).get('error') or got}")
+    settings = got.get("settings") if isinstance(got.get("settings"), dict) else {}
+    if got.get("source") == "none" or not settings:
+        return {"file": CONFIG, "source": got.get("source") or "none", "written": False, "set": [],
+                "problems": [got["error"]] if got.get("error") else []}
+    path = root / CONFIG
+    text = (path if path.exists() else defaults / TEMPLATES[CONFIG]).read_text(encoding="utf-8-sig")
+    written, problems = [], []
+    for key, value in settings.items():
+        s = BY_KEY.get(key)
+        if s is None or not key.startswith("ultrareview."):
+            problems.append(f"{key!r} is not an ultrareview setting this file holds, so it was left out")
+            continue
+        raw = ("true" if value else "false") if isinstance(value, bool) else str(value)
+        try:
+            text = set_value(text, s, raw)
+        except ConfigError as exc:
+            problems.append(f"{exc}; it was left out")
+            continue
+        written.append(key)
+    if not written:                                     # nothing usable: no file appears in the repository
+        return {"file": CONFIG, "source": got.get("source"), "written": False, "set": [], "problems": problems}
+    path.write_text(text, encoding="utf-8")
+    values, found = parse_config(text)
+    return {"file": CONFIG, "source": got.get("source"), "written": True, "set": written,
+            "values": nest(values), "problems": problems + found}
+
+
 # ── the commands ─────────────────────────────────────────────────────────────
 
 def _changed(source: str) -> list[str]:
@@ -845,14 +887,15 @@ def _changed(source: str) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=("effective", "skip", "show", "set", "add", "clear", "rules",
-                                            "sync-rules", "add-rule"))
+                                            "sync-rules", "seed", "add-rule"))
     parser.add_argument("args", nargs="*")
     parser.add_argument("--root", default="", help="the repository; by default the one holding this directory")
     parser.add_argument("--defaults", default=str(Path(__file__).resolve().parent.parent / "resources" / "config"))
     parser.add_argument("--dir", default="", help="the directory whose files to read or write; the root by default")
     parser.add_argument("--ref", default="", help="effective: read the files at this ref (origin/<target branch>)")
     parser.add_argument("--files", default="", help="effective: the changed paths, one per line, or - for stdin")
-    parser.add_argument("--file", default="", help="sync-rules: review_rules' answer, or - to read it from stdin")
+    parser.add_argument("--file", default="",
+                        help="sync-rules / seed: the tool's answer (review_rules / ultrareview_settings), or - for stdin")
     parser.add_argument("--heading", default="", help="add-rule: the rule's title")
     parser.add_argument("--text", default="", help="add-rule: the rule in plain words")
     parser.add_argument("--paths", default="", help="add-rule: paths it applies to, comma-separated")
@@ -909,6 +952,9 @@ def main(argv: list[str] | None = None) -> int:
                 text, counts = sync_rules(path.read_text(encoding="utf-8-sig"), got.get("rules"))
                 path.write_text(text, encoding="utf-8")
                 result = {"file": RULES, **counts, "written": True}
+        elif a.command == "seed":
+            result = seed(root, defaults, sys.stdin.read() if a.file == "-" else
+                          Path(a.file).read_text(encoding="utf-8-sig"))
         else:
             directory = norm_dir(root, a.dir)
             path = ensure(root, defaults, directory, CONFIG)

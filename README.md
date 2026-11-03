@@ -69,7 +69,7 @@ The pull request must be open, merge into your integrated branch, not come from 
 
 ### Settings
 
-`/cloudaeye:config` writes your team's settings to `.cloudaeye.config` and the review rules to `.cloudaeye.rules`, and syncs your organisation's rules from the console every time it runs. Commit both files.
+`/cloudaeye:config` writes your team's settings to `.cloudaeye.config` and the review rules to `.cloudaeye.rules`, and syncs your organisation's rules from the console every time it runs. A repository with no settings file yet can start from the ultrareview settings saved in the console. Commit both files.
 
 ```markdown
 ## Ultrareview

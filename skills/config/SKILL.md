@@ -1,9 +1,9 @@
 ---
 name: config
-description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the hard limits it approves within, and its human review policy — auto-assigning reviewers, how many at most, and your instructions), the review's defaults and which LLM reviews the code, the control-flow map's effort and the triage OKRs — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules. One section at a time; you answer in your own words.
+description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the hard limits it approves within, and its human review policy — auto-assigning reviewers, how many at most, and your instructions), the review's defaults and which LLM reviews the code, the control-flow map's effort and the triage OKRs — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules, and a repository with no settings file yet can start from the ultrareview settings saved in the console. One section at a time; you answer in your own words.
 when_to_use: Use when the user runs /cloudaeye:config, or asks to change CloudAEye's settings, approval limits, number of reviewers, review rules or instructions, the review's LLM or model, or to sync the review rules from the console.
 argument-hint: "[directory] [rules]"
-allowed-tools: ["Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules"]
+allowed-tools: ["Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules", "mcp__plugin_cloudaeye_cloudaeye__ultrareview_settings", "mcp__cloudaeye__ultrareview_settings"]
 ---
 
 ## Where the settings live
@@ -78,7 +78,32 @@ has no rules for this repository and none were synced before, so no file was cre
 Synced rules are headed by their id (`r12`) and replaced by the next sync: they are
 changed in the console, not here.
 
-### 3. Which directory
+### 3. Start from the console's settings — a new repository only
+
+Only when `settings_files` is empty (no `.cloudaeye.config` anywhere yet) and `REPO` is
+known; otherwise skip this step. Call `mcp__plugin_cloudaeye_cloudaeye__ultrareview_settings`
+with `repo`: `REPO`. Its `settings` are what the CloudAEye console sets apart from the
+defaults, as this file's keys; `source` says whose they are.
+
+- `source: none` — say in one line that the console's settings could not be read, and why
+  (`error`), and go on.
+- Empty `settings` — say in one line that the console has ultrareview at its defaults, and go on.
+- Otherwise print them as a short table, **Setting | Value**, under one line saying whose
+  they are (*this repository's settings in the console* or *your account's default in the
+  console*), and ask exactly: *Start `.cloudaeye.config` from these? (yes / no)*. On yes, pass
+  the **whole** answer, unchanged, in one Bash call:
+
+```bash
+CE seed --file - <<'CLOUDAEYE_SETTINGS_JSON'
+<the ultrareview_settings answer, verbatim>
+CLOUDAEYE_SETTINGS_JSON
+```
+
+  Say which settings were written (`set`) and any `problems`. On no, write nothing.
+
+From here the file is what the plugin's commands read; the console is not read again.
+
+### 4. Which directory
 
 A directory argument answers this; otherwise, when `settings_files` lists any outside
 the root, name them, and ask exactly:
@@ -90,9 +115,9 @@ Where should these settings apply?
 ```
 
 Enter or `1` is the root (no `--dir`); a path is `--dir "<path>"`. Call the chosen
-`--dir` (or nothing) `DIR` below. With the argument `rules`, go straight to step 5.
+`--dir` (or nothing) `DIR` below. With the argument `rules`, go straight to step 6.
 
-### 4. One section at a time
+### 5. One section at a time
 
 Run `CE show DIR` and go through its `settings` section by section, in this order
 (the LLM and Triage PRs only at the root — `show` leaves them out elsewhere):
@@ -160,16 +185,16 @@ Write only what the user asked for, in their words for instructions — never re
 instruction into a stricter or looser one. An answer that is not one of the options
 comes back as an error naming them: say so and ask again; never pick the nearest
 option. After the call, print the section's new values from the command's `values` in
-one line, and go to the next section. "done" ends the questions: go to step 5.
+one line, and go to the next section. "done" ends the questions: go to step 6.
 
-### 5. Rules of your own
+### 6. Rules of your own
 
 Ask: *Add a rule of your own? Say it in plain words, and the paths it applies to
 if not everywhere under this directory — or "no".* For each one:
 `CE add-rule DIR --heading "<a short title>" --text "<the rule, in their words>" --paths "api/,lib/"`
 (paths relative to the chosen directory; leave `--paths` out for all of it).
 
-### 6. What changed
+### 7. What changed
 
 Print:
 
