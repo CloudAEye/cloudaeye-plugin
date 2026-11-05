@@ -26,6 +26,10 @@ on its own, exactly as given, only when `progress_id` differs from the one you
 last printed. Add no job ids and no commentary, and never invent a line the
 server did not send.
 
+If the completed answer carries `next_run`, end with the heading
+`**To get more from the next run**` and each entry as a bullet, exactly as
+given, without restating it in your own words. Without it, add no such section.
+
 Stop after 150 calls or 30 minutes from submission, whichever comes first;
 check the deadline before each call. On timeout or unavailable polling,
 report the limitation and retain the ID for later. Never re-submit to check

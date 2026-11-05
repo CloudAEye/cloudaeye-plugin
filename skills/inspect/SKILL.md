@@ -32,6 +32,9 @@ with no other words around it: no job ids, no "polling", no commentary.
    the one you last printed; an answer where only the time moved prints
    nothing. Never invent a line the server did not send.
 3. On `completed`, print `✅ CloudAEye finished.` and then the response below.
+4. If that answer carries `next_run`, end with the heading
+   `**To get more from the next run**` and each entry as a bullet, exactly as
+   given, without restating it in your own words. Without it, add no such section.
 
 Stop after 150 calls or 30 minutes from submission, whichever comes first;
 check the deadline before each call. On timeout or unavailable polling,

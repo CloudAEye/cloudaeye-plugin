@@ -36,6 +36,10 @@ its own, exactly as given, with no other words around it: no job ids, no
    and `progress_id`. Print `⏳ ` + `message` only when `progress_id` differs from
    the one you last printed; an answer where only the time moved prints
    nothing. Never invent a line the server did not send.
+3. A completed answer may carry `next_run`. Keep its entries as you go. After
+   the final report, end with the heading `**To get more from the next run**`
+   and each distinct entry once, as a bullet, exactly as given, without
+   restating it in your own words. With none, add no such section.
 
 Stop after 150 calls or 30 minutes from submission, whichever comes first;
 check the deadline before each call. On timeout or unavailable polling,
