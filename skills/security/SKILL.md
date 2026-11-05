@@ -12,10 +12,28 @@ Submit analysis once. A direct response without `job_id` uses the original
 output rules below; report `status: error` and stop. An active response
 (`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
 
-For a queued response, keep its `job_id` and poll
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
-the submitting OAuth account while status is `queued`, `running`, or `retrying`.
-Stop after 60 polls or 30 minutes from submission, whichever comes first;
+For a queued response, keep its `job_id` and call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<progress_id>)`
+using the submitting OAuth account while status is `queued`, `running`, or
+`retrying`. `since` is the `progress_id` of the previous answer (empty on the
+first call). The server keeps the call open while the job runs, so call again
+straight away: no sleep, no pause between calls. In Claude Code the job's steps
+show live under the call, and a long job takes a few calls.
+
+**Show progress.** The developer may never have seen CloudAEye; these lines are
+how they know what is happening. Print each one on its own, exactly as given,
+with no other words around it: no job ids, no "polling", no commentary.
+
+1. Right before submitting, print:
+   `⏳ CloudAEye is checking your change for security problems. This can take a few minutes; progress shows below.`
+2. An answer that comes back still active carries `message`, one line saying
+   what the job is doing now ("Step 3 of 5 · Reviewing files: 4 of 8 done · 48s"),
+   and `progress_id`. Print `⏳ ` + `message` only when `progress_id` differs from
+   the one you last printed; an answer where only the time moved prints
+   nothing. Never invent a line the server did not send.
+3. On `completed`, print `✅ CloudAEye finished.` and then the response below.
+
+Stop after 150 calls or 30 minutes from submission, whichever comes first;
 check the deadline before each call. On timeout or unavailable polling,
 report the limitation and retain the ID for later. Never re-submit to check
 progress or start replacement work automatically.
