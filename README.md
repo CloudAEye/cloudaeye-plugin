@@ -23,7 +23,7 @@ Code review, security checks and review intelligence in Claude Code — on your 
 | `/cloudaeye:risk-score` | Whether an open PR needs a human reviewer, and why, from its files' history, its author's recent PRs and its AI slop. With no PR number it assesses your change before you push it. |
 | `/cloudaeye:triage-prs` | Which PR to review next across every connected repository, and why. A note like "I have half an hour" steers it. Reads only. |
 | `/cloudaeye:assign-reviewer` | Who should review an open PR, why, and what they should check. A note like "Tom is away" steers it; a review is requested only when you ask. |
-| `/cloudaeye:create-owners` | Write `OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
+| `/cloudaeye:create-owners` | Write `.OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
 | `/cloudaeye:config` | The team's settings, one question at a time, in a `.cloudaeye.config` at the repository's root or in any directory (it covers that directory and below): which checks ultrareview runs, the hard limits it may approve within, the most human reviewers it assigns and your ultrareview instructions; the review's severity floor and skipped paths; control-flow effort; triage OKRs. Every run also syncs your organisation's review rules into `.cloudaeye.rules`. Commit both; pull requests read them from the target branch. |
 | `/cloudaeye:add-docs` | Generate docstrings for an open PR and post them as review suggestions. |
 | `/cloudaeye:add-tests` | Generate unit tests for an open PR and post them as review suggestions. |
@@ -133,7 +133,8 @@ Set `CLOUDAEYE_URL` to your OAuth-enabled MCP endpoint before starting Claude Co
 
 ## What leaves your machine
 
-- Commands on your changes upload a `git diff` (new files included). A gitignored `.cloudaeye/` folder holds the session's diff, and the upload token stays in a private temporary file.
+- Commands on your changes upload a `git diff` (new files included), taken through a temporary copy of git's index, so your own index is never changed. A gitignored `.cloudaeye/` folder holds the session's diff, and the upload token stays in a private temporary file.
+- Long reports (`review-arch`, `control-flow`, `risk-score`, `slop-score`, `ultrareview`) print a short version in the terminal and save the whole report, diagrams included, to `.cloudaeye/reports/<command>.md`. The file is downloaded by the plugin's script and never passes through the model.
 - Pull-request commands (`#412`), `triage-prs` and `assign-reviewer` upload no code: CloudAEye reads GitHub itself.
 - `create-owners` runs locally and sends nothing.
 
@@ -149,6 +150,8 @@ Sign-in needs an interactive client, so unattended CI is not supported yet.
 | `upload_http=000` | Check network access and the server URL |
 | `cloudaeye_error=insecure_url` | Use HTTPS, except for localhost |
 | `base_source=head` | Connect the repository integration so the configured branch is used |
+| `cloudaeye_error=python_not_found` | Install Python 3 and make sure `python`, `python3` or `py` runs it |
+| A command asks to approve a shell step | Update the plugin: every shell step is one pre-approved `scripts/cae` command |
 
 ## Layout
 
@@ -157,9 +160,11 @@ Sign-in needs an interactive client, so unattended CI is not supported yet.
 .cursor-plugin/, cursor/          the Cursor plugin
 .mcp.json                         MCP server registration
 skills/<verb>/SKILL.md            the commands, including help
-scripts/                          local helpers: repository detection, OWNERS.md from git blame, the settings files
+scripts/cae                       the one shell command every skill runs (finds Python, runs cloudaeye_cli.py)
+scripts/                          its steps: repository detection, the upload, saving a report, the settings files, .OWNERS.md from git blame
 resources/config/                 the templates a new .cloudaeye.config and .cloudaeye.rules start from
-tests/                            the settings files' tests (python -m pytest tests; needs git)
+resources/skills/                 instructions a skill reads only when it needs them
+tests/                            the scripts' tests (python -m pytest tests; needs git)
 ```
 
 Adding a command: add it to the Commands table above (help reads it), and to the documentation's Skills & Commands and User Guide pages.

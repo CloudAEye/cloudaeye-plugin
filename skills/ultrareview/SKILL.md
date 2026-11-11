@@ -4,7 +4,7 @@ description: Every CloudAEye review of a change in one run — the full review (
 when_to_use: Only when the user types /cloudaeye:ultrareview or asks for every CloudAEye review at once. For one full review use /cloudaeye:review; for the routine check after a task use /cloudaeye:inspect.
 argument-hint: "[path | #PR] [--critical|--high|--medium|--low] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false] [task:<ticket | issue URL | text>]"
 disable-model-invocation: true
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__slop_score", "mcp__cloudaeye__slop_score", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__review_arch", "mcp__cloudaeye__review_arch", "mcp__plugin_cloudaeye_cloudaeye__control_flow", "mcp__cloudaeye__control_flow", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task", "mcp__plugin_cloudaeye_cloudaeye__review_summary", "mcp__cloudaeye__review_summary", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__slop_score", "mcp__cloudaeye__slop_score", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__review_arch", "mcp__cloudaeye__review_arch", "mcp__plugin_cloudaeye_cloudaeye__control_flow", "mcp__cloudaeye__control_flow", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task", "mcp__plugin_cloudaeye_cloudaeye__review_summary", "mcp__cloudaeye__review_summary", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
@@ -16,7 +16,7 @@ step. An active response (`queued`, `running`, `retrying`) without a non-empty
 `job_id` is malformed.
 
 For a queued response, keep its `job_id` and call
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<progress_id>)`
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<progress_id>, report=<the step's name, see **4. The report**>)`
 using the submitting OAuth account while status is `queued`, `running`, or
 `retrying`. `since` is the `progress_id` of the previous answer (empty on the
 first call). The server keeps the call open while the job runs, so call again
@@ -138,52 +138,25 @@ Read them in this order:
 
 ### Repository initialization gate
 
-Before creating a session, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
+  here on; do not recompute it from local Git.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo` for `start_session` and `check_pr`. Do not recompute it
-from local Git.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
-
-Do not start a session until this gate reports `ready` or `initialized`.
+Do not go on until this gate reports `ready` or `initialized`.
 
 ### Your settings
 
@@ -236,16 +209,7 @@ What they decide:
 Every step below uses **this one session**. Never call `start_session` again
 and never upload twice.
 
-First collect the current local branch and HEAD with one Bash call.
-
-```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-[ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-mkdir -p .cloudaeye/session && printf '*\n' > .cloudaeye/.gitignore
-BRANCH=$(git rev-parse --abbrev-ref HEAD); HEAD_SHA=$(git rev-parse HEAD)
-"$PY" -c "import json,sys;print(json.dumps(dict(branch=sys.argv[1],head=sys.argv[2])))" "$BRANCH" "$HEAD_SHA"
-```
+The initialization gate already printed the current `branch` and `head`.
 
 Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `INIT.repo_full`,
 `branch` and `head` — no `language`. If the tool is unavailable, stop and tell
@@ -257,73 +221,20 @@ print the `error` as written and stop: it is the eligibility refusal (closed,
 wrong base branch, fork, over 50 files), and each names a different thing to
 do. Never review the working tree instead. On success, say which pull request
 this is (number, title, head SHA) and whether it is a draft. Then read your
-settings as the target branch has them, in one Bash call — `pull_request.base`
-as `BASE_BRANCH`, `key_url` and `key_token` as `start_session` returned them, and each of
-`pull_request.files` in single quotes after `--`:
+settings as the target branch has them: exactly this one command, alone in its Bash call,
+with `start_session`'s whole answer as JSON inside single quotes:
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-[ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
-BASE_BRANCH='<pull_request.base>'
-CE_KEY_URL='<key_url>'
-CE_KEY_TOKEN='<key_token>'
-case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
-case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
-echo "settings:"
-CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" --send-key "$CE_KEY_URL" -- '<path 1>' '<path 2>'
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae pr-settings '<the start_session answer as JSON>' --review
 ```
 
-**Working-tree and path modes only, to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
+**Working-tree and path modes only, to the end of step 1.** Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. The script checks the values itself and never prints a token.
 
 ```bash
-CE_SESSION='<session_id>'
-CE_UPLOAD_URL='<upload_url>'
-CE_UPLOAD_TOKEN='<upload_token>'
-CE_KEY_URL='<key_url>'
-CE_KEY_TOKEN='<key_token>'
-TARGET='<validated target_branch or empty>'
-SCOPE='<the path the user gave, or empty for the whole change>'
-cd "$(git rev-parse --show-toplevel)" || exit 1
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-CFG="${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py"
-SKIP=$([ -n "$PY" ] && "$PY" "$CFG" skip 2>/dev/null)
-case "$SCOPE" in *..*|/*|~*|[A-Za-z]:*) echo "cloudaeye_error=scope_outside_repo"; exit 1;; esac
-case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
-case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
-[ "${#CE_UPLOAD_TOKEN}" = 64 ] || { echo "cloudaeye_error=bad_upload_token"; exit 1; }
-case "$CE_UPLOAD_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) echo "cloudaeye_error=insecure_url"; exit 1;; esac
-CE_TMP=$(mktemp -d 2>/dev/null) || CE_TMP="${TMPDIR:-${TMP:-/tmp}}/cloudaeye-$$"
-mkdir -p "$CE_TMP" || { echo "cloudaeye_error=bad_config"; exit 1; }
-trap 'rm -rf "$CE_TMP"' EXIT INT TERM
-printf 'header = "X-Upload-Token: %s"\n' "$CE_UPLOAD_TOKEN" > "$CE_TMP/curl.cfg"
-chmod 600 "$CE_TMP/curl.cfg" 2>/dev/null || true
-case "$TARGET" in ''|-*|*[!A-Za-z0-9._/-]*) TARGET="";; esac
-HEAD_SHA=$(git rev-parse HEAD); BASE=""; SRC=fork_point
-if [ -n "$TARGET" ]; then
-  git rev-parse --verify -q "origin/$TARGET" >/dev/null 2>&1 || \
-    GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS=echo \
-    git -c credential.helper= fetch -q origin "$TARGET" 2>/dev/null
-  BASE=$(git merge-base "origin/$TARGET" HEAD 2>/dev/null)
-fi
-[ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
-git add --intent-to-add . >/dev/null 2>&1
-PATHS=("${SCOPE:-.}"); SKIPPED=0
-while IFS= read -r p; do case "$p" in ''|*..*|/*|~*) ;; *) PATHS+=(":(exclude)$p");; esac; done <<< "$SKIP"
-git diff "$BASE" -- "${PATHS[@]}" > .cloudaeye/session/session.diff
-git diff --name-only "$BASE" -- "${PATHS[@]}" > "$CE_TMP/files.txt"
-SCOPED=$(wc -l < "$CE_TMP/files.txt")
-[ -n "$SKIP" ] && SKIPPED=$(( $(git diff --name-only "$BASE" -- "${SCOPE:-.}" | wc -l) - SCOPED ))
-TOTAL=$(git diff --name-only "$BASE" | wc -l)
-UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o "$CE_TMP/upload.json" -w '%{http_code}' \
-  -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
-SAME=$(grep -o '"diff_unchanged": *\(true\|false\)' "$CE_TMP/upload.json" 2>/dev/null | grep -o 'true\|false' || echo unknown)
-echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP diff_unchanged=$SAME"
-case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
-echo "settings:"
-if [ -n "$PY" ]; then CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "$CFG" effective --send-key "$CE_KEY_URL" --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>' --review
 ```
+
+Add `--scope '<the path>'` after the JSON when the user scoped the run to a path.
 
 Read the two summary lines and the `start_session` result; don't re-derive them:
 
@@ -366,8 +277,8 @@ steps invalidates the stored results the later steps reuse.
   say in one line that the intent is the author's stated purpose.
 - **Otherwise:** describe the code change you made in this round of edits —
   what and why, plus any security-relevant surface it touches. **Do not read
-  the diff to write it.** If you did not make the changes, say so in one line
-  and use `git diff --stat` for the file list — never the full diff.
+  the diff to write it.** If you did not make the changes, say so inside the intent
+  itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
 
 ### 3. Run, bottom-up
 
@@ -423,12 +334,10 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
    first run
 
    ```bash
-   gh api user --jq .login 2>/dev/null || true
-   git config user.email 2>/dev/null || true
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae login
    ```
 
-   and pass `author` — the `gh` output, or the name in a
-   `<id>+<name>@users.noreply.github.com` email; omit it when neither gives one
+   and pass `author`, what it prints after `author=`; omit it when that is empty
    (the server tries your sign-in). There is no checklist there, so coverage is
    reported as not measured, and the card is never posted.
 6. **Architecture** (unless turned off). Call `mcp__plugin_cloudaeye_cloudaeye__review_arch` with
@@ -447,7 +356,7 @@ except <the patterns, comma-separated>"`. Otherwise pass no `scope_path`.
 10. **The verdict, the results and what to do next.** Call
     `mcp__plugin_cloudaeye_cloudaeye__review_summary` with `session_id`,
     `policy`: `SETTINGS.ultrareview` when present, and — on the working tree or a
-    path — `author`: the login step 5's two commands found (run them here when risk
+    path — `author`: the login step 5's command printed (run it here when risk
     was turned off).
     It reads every result stored above and returns the report's top: `headline`
     (approved for merge, or requires human review), `verdict` (`approve` or
@@ -494,55 +403,47 @@ deadline ends the chain (see Queued Result).
 
 ### 4. The report
 
-Print it once, after the last step, as markdown in this shape. **The report is
-the complete output of every command that ran** — the developer typed one
-command instead of eight, and gets everything all eight would have printed.
-Nothing is shortened or left out to save space: the collapsible sections are
-what keep it readable, so put the detail inside them rather than cutting it.
+**Every `get_job_result` call in this skill passes `report`**: the step's own
+command name (`review`, `slop-score`, `risk-score`, `review-arch`, `control-flow`), and
+`ultrareview` on step 10. Each answer then carries its card as short text, and
+step 10's carries `report`, the whole ultrareview report as a file to save.
+Do not print any step's card: the developer gets them all in that file.
 
-It has four parts, in this order — Summary, Results, What to do next, Code
-review — and the first three are always open:
+Print the report's top once, after the last step, in this shape, and nothing
+below it but the lines this section names:
 
 ```markdown
 ## Summary
 
 **This code change requires human review.**
 
-- The change risk assessment asks for a human review.
+- The review found 2 High-severity security findings (#8: …)
 
 **Suggested reviewers:** Alice Smith (`alice`) — Auth API owner · `bob` — main contributor to src/api/
-
-<details>
-<summary>How they were suggested (/cloudaeye:assign-reviewer)</summary>
-
-…step 11's card…
-
-</details>
 
 ## Results
 
 | Review criteria | Assessment |
 |---|---|
 | AI slop score | 🟠 70/100 · High likelihood of low-quality code |
-| Risk score | 🟠 55/100 · Medium |
-| Bugs | 16 findings (2 high, 6 medium, 8 low) |
-| Security | no findings |
-| PR checklist | 2 of 6 checks passed, 4 need work (…) |
-| Unit test coverage | 21.4% (9/42 covered) |
-| Architecture | PASS · 0 findings |
-| Control flow | 3 calls added · 1 removed |
-| Task | not applicable: checked on uncommitted changes only |
+| … one row per criterion, as given … | |
 
 Ran now: … · Reused from earlier runs on this change: …
 
 ### What to do next
 
 …step 10's summary…
-
-## Code review
-
-<details>…one per command…</details>
 ```
+
+Then save the full report (exactly this one command, alone in its Bash call):
+
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report ultrareview '<step 10's result.report as JSON>'
+```
+
+and end with `Full report, every command's output: <report_path>` (on
+`report_error=…`, say it could not be saved and why). Never open, read or
+print that file yourself.
 
 **Summary.** Step 10's `headline` **verbatim**, in bold, then its `reasons`
 as a list (none when approved). Never write the headline yourself and never
@@ -613,105 +514,18 @@ never ran — the review failed, or a job was still pending at its deadline —
 say so in this line: *Not posted on the pull request: the run did not finish*,
 and why. Never leave a pull-request run without this line.
 
-**Code review — one collapsible section per command, in tree order** —
-Risk, Check, Review, AI slop, Architecture, Control flow, Task — skipping the
-ones that did not run. Each is:
+Rules for the top:
 
-```markdown
-<details>
-<summary><b>Review</b> — request_changes · 7 findings</summary>
+- Never reformat, re-order, round or summarise what a tool returned; never say
+  how a score is built (no weights, points or thresholds).
+- A step that failed, refused or timed out gets one line under the Results
+  table saying which and why (`unavailable`, `degraded`, `context_refresh.reason`
+  as given). Its row already says *not run*.
+- `unmeasured` on the slop or risk result: say the score covers only what could
+  be measured. **Name no reviewer from the risk result**; reviewers come from
+  step 11 alone.
 
-…the section's content…
-
-</details>
-```
-
-The `<summary>` line carries that command's assessment from the results table.
-Keep the blank line after it and before `</details>`, or the markdown inside
-does not render.
-
-- **Review.** First the `verdict` and the `counts` roll-up; `scope` when
-  present; when a floor was applied, `min_severity` and `held_back` ("no
-  findings at or above high, and four below it"). Then two nested collapsible
-  sections, the Bugs and Security rows:
-  - **Bugs** — every `BUG_REPORT` finding;
-  - **Security** — leaked secrets **first** (a
-    committed credential has a clock on it; say so plainly when there is one),
-    then application security, then LLM, AI-agent and MCP security, each under
-    its own bold label.
-
-  A half the settings turned off reads *skipped: turned off in the repository's
-  settings* in place of its findings.
-
-  List **every finding in full**: its `n.`, file:line, severity and title on one
-  line; indented under it the explanation (`why`, or `description` /
-  `vulnerability_details` where a report type uses those); then the offending
-  lines (`issue_diff`) in a fenced block when present. Print each with its `n`
-  exactly as the server numbered it and never renumber. Do not print the
-  reviewer's working (`reasoning`, `validate`, `formatted_block`), and do not
-  list report types that found nothing.
-- **Check.** One line: the `verdict` and the `summary` as written — hygiene for
-  this repository's enabled checks, not bugs and not security. Then the table,
-  one row per check: label, status, `metric` exactly as given (blank when
-  empty). `passed`, `failed`, `skipped` (not enabled) and `error` (could not
-  run) are four different statuses; never flatten them. Then
-  `counts.findings` and `stages` as counts (a `SECRET_SCAN` count above zero is
-  urgent), `degraded` in full, and the pointer line by `posted.status`: `ok` →
-  "Full report: [repo#n](pr_url)"; `partial` → the link, and that some detail
-  could not be posted; `failed` → the link, and that the checklist could not be
-  posted; `unavailable` → the GitHub App is not installed, nothing was posted.
-  `not_configured` is configuration, never a pass: say no checks are enabled
-  and list `available_checks`. A verdict of `error` is a failed run — no
-  table, no link. **Then the full report**: `report` verbatim, in a nested
-  `<details><summary>Full checklist report</summary>` — every check's own
-  output, unit-test and docstring coverage by function included, exactly as it
-  sits on the pull request. Absent `report` (an older server): say the detail
-  is on the pull request.
-- **Tests on uncommitted changes.** There is no checklist before a pull request,
-  so there is no coverage percentage; say so in the Risk section's line about
-  coverage. What is measured is in the Review section's `missing_tests` findings
-  (new functions no test calls) and the AI slop card.
-- **AI slop.** The `card` verbatim inside a ```text fence. When `unmeasured` is
-  not empty, say the score covers only what could be measured and name the
-  rest — never as clean. The band describes review burden, never authorship.
-- **Risk.** The `card` verbatim. `verdict` `review` → *human review required*,
-  `approve` → *no extra review needed*. `slop.ran` says whether the slop score
-  was reused. **Name no reviewer from it** — not from the card's authors,
-  shares or blame; reviewers come from step 11 alone. On the
-  working tree (`subject: "change"`) the card is about your change before it is
-  pushed: coverage is a stated gap, and when the author rows say *the author's
-  GitHub login is not known*, suggest `gh auth login` for the next run.
-- **Architecture.** The `card` verbatim, every mermaid fence included. Say the
-  `verdict` first. Mention `pre_existing` when it is not zero, and say
-  `diff_measured: false` means what changed could not be determined — never
-  "nothing changed". `unavailable` is an ordinary answer: print its `note`.
-- **Control flow.** The `card` verbatim, every mermaid fence included, Before
-  and After both when there are two. Lead with a `Cross-repository reach`
-  section when the card has one; `cross_repo.unmeasured` means the search did
-  not run, not that it found nothing.
-- **Task.** The `report` verbatim. `DONE`, `NOT_DONE` (anything less than every
-  requirement) or `ERROR` (the check could not run — offer pasting the ticket
-  body as text).
-
-Rules for every card:
-
-- **Never shorten a section.** Every card is printed whole — every row, every
-  diagram, every collapsed block it carries — and every finding with its full
-  text. A long section is what `<details>` is for; the one short version of the
-  run is *What to do next*, and it is the server's, not yours.
-- Never reformat, re-order, round or summarise a card into prose; it is
-  rendered server-side because what it may show is the feature. Never wrap a
-  card that already contains a ``` fence in another fence.
-- Never say how a score is built — no weights, points or thresholds. The cards
-  say the scores are not calibrated yet; say so too if the user leans on a
-  figure.
-- `context_refresh.status` of `skipped` or `failed` on any response: say in one
-  line that the code graph was not refreshed with this diff and quote
-  `context_refresh.reason`.
-- `posted` is absent on every card here: each command's card reaches the pull
-  request inside the one report step 12 posts, never on its own.
-
-**After the sections, at most three lines:**
+**After the report line, at most three lines:**
 
 1. `/cloudaeye:implement` numbers refer to the **Review** section. The AI slop
    and architecture lists number their own findings; to act on one of those,

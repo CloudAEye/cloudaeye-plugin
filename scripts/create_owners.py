@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""/cloudaeye:create-owners: write OWNERS.md files from the repository's git history.
+"""/cloudaeye:create-owners: write .OWNERS.md files from the repository's git history.
 
 Local only: git and Python, no network, no CloudAEye call, no model. Prints one
 JSON object describing what it did (or, with --dry-run, would do).
@@ -8,11 +8,11 @@ JSON object describing what it did (or, with --dry-run, would do).
                      [--team NAME --team-lead LOGIN [--member LOGIN ...]]
     create_owners.py --collect
 
-``--collect`` blames nothing and writes nothing: it prints every OWNERS.md in the
+``--collect`` blames nothing and writes nothing: it prints every .OWNERS.md in the
 working tree as ``{"owners": {path: text}}``, which /cloudaeye:assign-reviewer
 sends while the target branch has none of its own.
 
-The format and every rule are CloudAEye's OWNERS.md spec:
+The format and every rule are CloudAEye's .OWNERS.md spec:
 
 - **Contributors** is measured: each person's share of the lines standing in a
   folder that were written in the last 12 months (all lines when fewer than 200
@@ -30,7 +30,14 @@ similarity = the sum, person by person, of the smaller of their share of the
 folder and their share of the rest of the area; below 0.70 it gets a file. A
 folder holding 90% or more of its parent's code is passed through and uses up no
 level; a folder under 500 lines is too small for a file of its own. A folder
-that already has an OWNERS.md keeps it.
+that already has a .OWNERS.md keeps it.
+
+The file is a dotfile, ``.OWNERS.md``, so it stays out of directory listings.
+Until 9 Nov 2026 it was ``OWNERS.md``: a run renames every file still called
+that under PATH, whatever its depth, so the Teams people wrote carry over, and
+then refreshes it like any other (on disk only; git sees a rename once staged).
+A folder that already has both keeps both and the old one is named in
+``old_names_left``.
 
 Only GitHub handles are written. An author becomes a handle from a GitHub
 noreply address, from a name whose letters spell a login seen in the history,
@@ -50,7 +57,8 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 
-OWNERS = "OWNERS.md"
+OWNERS = ".OWNERS.md"
+OLD_NAME = "OWNERS.md"          # the name until 9 Nov 2026; renamed, never written
 WINDOW_DAYS = 365
 MIN_RECENT = 200
 MIN_AREA = 500
@@ -65,7 +73,7 @@ LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\Z")
 NOREPLY = re.compile(r"^(?:\d+\+)?([^@\s]+)@users\.noreply\.github\.com$", re.I)
 BOT = re.compile(r"\[bot\]|dependabot|renovate|github-actions|snyk-bot|greenkeeper", re.I)
 SKIP_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "go.sum", "Cargo.lock",
-              "composer.lock", "Gemfile.lock", OWNERS}
+              "composer.lock", "Gemfile.lock", OWNERS, OLD_NAME}
 SKIP_DIRS = {"vendor", "node_modules", "third_party", "dist", "build", ".git"}
 DATA_SUFFIXES = {".json", ".jsonl", ".csv", ".tsv", ".svg", ".snap", ".ipynb", ".xml", ".lock"}
 GENERATED = re.compile(r"(\.min\.(js|css)$|\.pb\.go$|_pb2\.py$|\.generated\.)", re.I)
@@ -174,7 +182,7 @@ def similarity(a: Counter, b: Counter) -> float:
 
 
 def place(start: str, depth: int, counts, children: dict[str, list[str]], existing: set[str]) -> tuple[set, list]:
-    """The folders that get an OWNERS.md, and the decisions behind each one judged."""
+    """The folders that get a .OWNERS.md, and the decisions behind each one judged."""
     files, decisions = {start}, []
 
     def lines(d: str) -> int:
@@ -297,16 +305,41 @@ def add_team(text: str, team: str, lead: str, members: list[str]) -> tuple[str, 
 
 # ── the run ───────────────────────────────────────────────────────────────────
 
-def existing_owners(root: str, start: str) -> set[str]:
-    """Folders (relative, "" the root) under ``start`` that already have an OWNERS.md, tracked or not."""
-    out = set()
+def _walk(root: str, start: str):
+    """(folder relative to the root, "" the root; its file names) for every folder under ``start``."""
     base = Path(root) / start if start else Path(root)
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        if OWNERS in filenames:
-            rel = Path(dirpath).relative_to(root).as_posix()
-            out.add("" if rel == "." else rel)
-    return out
+        rel = Path(dirpath).relative_to(root).as_posix()
+        yield ("" if rel == "." else rel), filenames
+
+
+def existing_owners(root: str, start: str, names: tuple[str, ...] = (OWNERS, OLD_NAME)) -> set[str]:
+    """Folders (relative, "" the root) under ``start`` that already have an owners file, tracked or not.
+
+    The old name counts, so a dry run places files exactly where the run that renames them would.
+    """
+    return {folder for folder, filenames in _walk(root, start) if any(n in filenames for n in names)}
+
+
+def _rel(folder: str, name: str) -> str:
+    return f"{folder}/{name}" if folder else name
+
+
+def rename_old(root: str, start: str, dry_run: bool) -> tuple[list[str], list[str]]:
+    """Every OWNERS.md under ``start`` renamed .OWNERS.md: (renamed, left as it was because both are there)."""
+    renamed, left = [], []
+    for folder, filenames in _walk(root, start):
+        if OLD_NAME not in filenames:
+            continue
+        old = Path(root) / (folder or ".") / OLD_NAME
+        if OWNERS in filenames or old.is_symlink():
+            left.append(_rel(folder, OLD_NAME))
+            continue
+        if not dry_run:
+            old.rename(old.with_name(OWNERS))
+        renamed.append(_rel(folder, OLD_NAME))
+    return renamed, left
 
 
 def run(args) -> dict:
@@ -359,6 +392,7 @@ def run(args) -> dict:
         if d and d != start:
             parent = str(PurePosixPath(d).parent)
             children["" if parent == "." else parent].append(d)
+    renamed, old_left = rename_old(root, start, args.dry_run)
     existing = existing_owners(root, start)
     chosen, decisions = place(start, max(0, args.depth), counts, children, existing)
 
@@ -377,12 +411,15 @@ def run(args) -> dict:
         for k, s in unresolved:
             unresolved_all[k] = max(unresolved_all[k], round(s, 3))
         path = Path(root) / (folder or ".") / OWNERS
-        rel = (f"{folder}/{OWNERS}" if folder else OWNERS)
+        rel = _rel(folder, OWNERS)
         entry = {"path": rel, "lead_contributor": handles[0][0] if handles else None,
                  "contributors": [[k, round(s, 3)] for k, s in handles],
                  "unresolved": [[k, round(s, 3)] for k, s in unresolved]}
-        if path.exists():
-            text = path.read_text(encoding="utf-8")
+        if _rel(folder, OLD_NAME) in renamed:
+            entry["renamed_from"] = _rel(folder, OLD_NAME)
+        source = path if path.exists() else path.with_name(OLD_NAME)    # the old name: a dry run renamed nothing
+        if source.exists():
+            text = source.read_text(encoding="utf-8")
             if not _HEADING.search(re.sub(r"<!--.*?-->", "", text, flags=re.S)):
                 entry["action"] = "older format: left as it is"
                 results.append(entry)
@@ -418,24 +455,29 @@ def run(args) -> dict:
         "status": "ok", "repository": root, "start": start or ".", "depth": args.depth, "head": head,
         "dry_run": bool(args.dry_run), "shallow": shallow, "files_scanned": len(files),
         "owners_files": results, "decisions": decisions,
+        "renamed": renamed, "old_names_left": old_left,
         "needs_a_handle": [[k, s] for k, s in unresolved_all.most_common()],
         "runner": {"name": name, "login": runner if runner and LOGIN.fullmatch(runner) else None},
     }
 
 
-#: The largest OWNERS.md --collect prints, and how many: what CloudAEye reads from a working tree.
+#: The largest .OWNERS.md --collect prints, and how many: what CloudAEye reads from a working tree.
 MAX_COLLECT_BYTES = 32_000
 MAX_COLLECT_FILES = 60
 
 
 def collect() -> dict:
-    """Every OWNERS.md in the working tree, tracked or not, root first: the files, not a measurement."""
+    """Every .OWNERS.md in the working tree, tracked or not, root first: the files, not a measurement."""
     root = git("rev-parse", "--show-toplevel").strip()
     if not root:
         raise Fail("not inside a git repository")
     owners, skipped = {}, []
     for folder in sorted(existing_owners(root, ""), key=lambda d: (d.count("/") if d else -1, d)):
-        rel = f"{folder}/{OWNERS}" if folder else OWNERS
+        rel = _rel(folder, OWNERS)
+        if not (Path(root) / rel).is_file():
+            skipped.append({"path": _rel(folder, OLD_NAME), "reason": f"the old name: /cloudaeye:create-owners "
+                                                                      f"renames it to {OWNERS}"})
+            continue
         text = (Path(root) / rel).read_text(encoding="utf-8", errors="replace")
         if len(text.encode("utf-8")) > MAX_COLLECT_BYTES:
             skipped.append({"path": rel, "reason": f"larger than {MAX_COLLECT_BYTES:,} bytes"})
@@ -449,7 +491,7 @@ def collect() -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("path", nargs="?", default="")
-    ap.add_argument("--collect", action="store_true", help="print the working tree's OWNERS.md files and stop")
+    ap.add_argument("--collect", action="store_true", help="print the working tree's .OWNERS.md files and stop")
     ap.add_argument("--depth", type=int, default=DEFAULT_DEPTH)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--alias", action="append", help='"Git Name=login": the GitHub handle for a git author')

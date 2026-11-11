@@ -3,7 +3,7 @@ name: triage-prs
 description: Pick the pull request you should review next, across every repository your team connected to CloudAEye, and say why. Each PR waiting on you gets a priority out of 100 from its tickets' urgency, what the changed code does and the OKRs it serves, its risk, and how much else depends on it; PRs whose next move is the author's are listed apart. A note in your own words ("I have half an hour", "skip the UI repo") steers the pick. With nothing requested from you, it lists the PRs nobody was asked to review. Reads only; writes nothing on GitHub or Jira.
 when_to_use: Use when the user asks what to review next, which PR to look at, what is waiting on them, to prioritise or triage pull requests, or (with repo or all) for a team's whole PR queue. Not for whether one PR is risky (/cloudaeye:risk-score) or who should review one (/cloudaeye:assign-reviewer).
 argument-hint: "[here | repo | all] [a note: 'I have half an hour'] [okrs:<file or URL>] [for:@login]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__triage_prs", "mcp__cloudaeye__triage_prs", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__triage_prs", "mcp__cloudaeye__triage_prs", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository"]
 ---
 
 ## Direct Result
@@ -34,13 +34,14 @@ Never interpret the note yourself; the server applies it.
 ### 2. Find the user's GitHub username (for `mine` and `here`)
 
 ```bash
-gh api user --jq .login 2>/dev/null || true
-git config user.email 2>/dev/null || true
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae login
 ```
 
-`REVIEWER` is the first that gives a login: the `gh` output, or the name in an email of
-the form `<id>+<name>@users.noreply.github.com`. Otherwise leave `REVIEWER` empty: the
-server finds it from the user's sign-in when it can.
+`REVIEWER` is what it prints after `author=`. Empty means leave it out: the
+server finds it from the user's sign-in when it can. That command already tried
+the GitHub CLI and the git address: never look the login up any other way (no `gh`
+or `git` call of your own, which would ask the user to approve it); if the server
+still needs it, it answers `login_needed` and you ask.
 
 ### 3. Your settings
 
@@ -48,9 +49,7 @@ When you are in a git repository, read the OKRs setting in its top-level
 `.cloudaeye.config` (`/cloudaeye:config` writes it), in one Bash call:
 
 ```bash
-cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || { echo '{"error": "not in a git repository"}'; exit 0; }
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config effective
 ```
 
 `triage.okrs` in the answer is used when the user named no `okrs:`. An `error`, or no
@@ -69,10 +68,7 @@ These two need the current repository. Run the bundled preflight helper and the
 session-free initialization tool, as every operational CloudAEye command does:
 
 ```bash
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-[ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
 Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
@@ -87,8 +83,9 @@ Pass `reviewer=REVIEWER`, `scope` (`mine`, `here`, `repo` or `all`), `repo` for 
 and `repo`, `note=NOTE`, `okrs=OKRS`, and `for_login` (no `@`) when the user asked for
 someone else's queue.
 
-- `status: login_needed`: ask once — *What is your GitHub username?* — and call again
-  with it as `reviewer`.
+- `status: login_needed`: ask once — *What is your GitHub username?* — and stop until the
+  user answers; then call again with it as `reviewer`. The server remembers it for this
+  account, so it is asked only once.
 - `status: error`: report `error` and stop.
 - `status: ok`: go on.
 

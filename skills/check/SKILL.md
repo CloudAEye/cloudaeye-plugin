@@ -3,7 +3,7 @@ name: check
 description: Run CloudAEye's checklist against an open pull request of this repository, given its number (#405) — docstring coverage, unit-test coverage, README freshness, dependency manifests, PR title and description quality, duplicate code, and a secret scan. Reports what each check found and posts the full report on the pull request; it never edits code on its own.
 when_to_use: Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly ("/cloudaeye:check #405"). This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review. Replaces /cloudaeye:check-pr.
 argument-hint: "<#PR number, e.g. #405>"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr"]
 ---
 
 ## What this is, and what it is not
@@ -39,51 +39,25 @@ nothing. That is a configuration answer, not a clean bill of health — see step
 
 ### Repository initialization gate
 
-Before anything else, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
+  here on; do not recompute it from local Git.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo`. Do not recompute it from local Git.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
-
-Do not proceed until this gate reports `ready` or `initialized`.
+Do not go on until this gate reports `ready` or `initialized`.
 
 1. Read the pull request number from the argument.
 

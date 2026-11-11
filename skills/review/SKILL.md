@@ -3,50 +3,29 @@ name: review
 description: Full CloudAEye review — bugs and security in one pass — of the uncommitted changes in this repo, of just one file or directory of them, or of an open pull request given its number. Reports findings with file, line and severity, grouped by kind; it never edits code on its own. The widest and most expensive of the CloudAEye passes.
 when_to_use: Use before opening a significant PR, when the user asks for a full, complete or thorough review, when they name a path to review ("/cloudaeye:review src/auth/"), or when they name a pull request ("/cloudaeye:review #405", "review PR 12"). For the routine check after finishing a task use /cloudaeye:inspect; for the security surface alone use /cloudaeye:security.
 argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
 
-Submit analysis once. A direct response without `job_id` uses the original
-output rules below; report `status: error` and stop. An active response
-(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+Submit the analysis once. An answer without `job_id` is the response itself
+(report `status: error` and stop). With a `job_id`, call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<last progress_id>, report="review")`
+again and again, with no pause, while `status` is `queued`, `running` or
+`retrying`. The server keeps each call open while the job runs.
 
-For a queued response, keep its `job_id` and call
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<progress_id>)`
-using the submitting OAuth account while status is `queued`, `running`, or
-`retrying`. `since` is the `progress_id` of the previous answer (empty on the
-first call). The server keeps the call open while the job runs, so call again
-straight away: no sleep, no pause between calls. In Claude Code the job's steps
-show live under the call, and a long job takes a few calls.
-
-**Show progress.** The developer may never have seen CloudAEye; these lines are
-how they know what is happening. Print each one on its own, exactly as given,
-with no other words around it: no job ids, no "polling", no commentary.
-
-1. Right before submitting, print:
-   `⏳ CloudAEye is reviewing your change. This usually takes a few minutes; progress shows below.`
-2. An answer that comes back still active carries `message`, one line saying
-   what the job is doing now ("Step 3 of 5 · Reviewing files: 4 of 8 done · 48s"),
-   and `progress_id`. Print `⏳ ` + `message` only when `progress_id` differs from
-   the one you last printed; an answer where only the time moved prints
-   nothing. Never invent a line the server did not send.
-3. On `completed`, print `✅ CloudAEye finished.` and then the response below.
-4. If that answer carries `next_run`, end with the heading
-   `**To get more from the next run**` and each entry as a bullet, exactly as
-   given, without restating it in your own words. Without it, add no such section.
-
-Stop after 150 calls or 30 minutes from submission, whichever comes first;
-check the deadline before each call. On timeout or unavailable polling,
-report the limitation and retain the ID for later. Never re-submit to check
-progress or start replacement work automatically.
-
-On `completed`, require a `result` dictionary and use it as **the response**
-below, preserving the tool's original fields. Completion is not a clean
-verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
-or `error`; report missing/expired results, never treat them as empty or clean.
-Finish the job before dependent actions, edits, or another review/fix/upload
-on the same session; a pending job does not cover new code.
+- Right before submitting, print:
+  `⏳ CloudAEye is reviewing your change. This usually takes a few minutes; progress shows below.`
+- Print `⏳ ` + `message` only when `progress_id` changed, exactly as given: no
+  job ids, no "polling", no commentary, never a line the server did not send.
+- On `completed`, print `✅ CloudAEye finished.` and use its `result` as **the response** below, keeping the
+  tool's fields. An inner `status: error` is a refusal, not a clean result.
+- If the answer carries `next_run`, end with the heading
+  `**To get more from the next run**` and each entry as a bullet, exactly as given.
+- Stop after 150 calls or 30 minutes and say the job is still running, with its
+  id. On `failed` or `error`, report it and stop. Never submit again to check
+  progress, and finish the job before any edit, upload or other command on the
+  same session.
 
 ## When to run
 
@@ -141,51 +120,25 @@ A pull request must be **open** (drafts are fine), must merge into this reposito
 
 ### Repository initialization gate
 
-Before creating a session, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
+  here on; do not recompute it from local Git.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo` for `start_session`. Do not recompute it from local Git.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
-
-Do not start a session until this gate reports `ready` or `initialized`.
+Do not go on until this gate reports `ready` or `initialized`.
 
 
 ### Your settings
@@ -213,86 +166,24 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
 
 1. Prepare and upload the review session.
 
-   First collect the current local branch and HEAD with one Bash call.
+   The initialization gate already printed the current `branch` and `head`.
 
-   ```bash
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   mkdir -p .cloudaeye/session && printf '*\n' > .cloudaeye/.gitignore
-   BRANCH=$(git rev-parse --abbrev-ref HEAD); HEAD_SHA=$(git rev-parse HEAD)
-   "$PY" -c "import json,sys;print(json.dumps(dict(branch=sys.argv[1],head=sys.argv[2])))" "$BRANCH" "$HEAD_SHA"
-   ```
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with those three values — no `language`; the server derives the tech-stack hint from the diff, which describes the change rather than the repo around it. If the tool is unavailable, stop and tell the user to authenticate CloudAEye through `/mcp`.
+   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `INIT.repo_full` and that `branch` and `head` — no `language`; the server derives the tech-stack hint from the diff, which describes the change rather than the repo around it. If the tool is unavailable, stop and tell the user to authenticate CloudAEye through `/mcp`.
 
    **Pull-request mode:** also pass `pr_number` — the digits the user gave, with any `#` stripped. Then **stop here and go to step 2**: the diff is already on the server, so the whole upload block below is skipped, and running it would compute a working-tree diff nobody asked for.
 
    On `status: error` in this mode, print the `error` field as written and stop. It is the eligibility refusal — closed pull request, wrong base branch, fork, or over the 50-file limit — and each names a different thing to do. Do not paraphrase it into "the PR could not be reviewed", and do not review the working tree instead.
 
-   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible. Then read your settings as the target branch has them, in one Bash call — `pull_request.base` as `BASE_BRANCH`, `key_url` and `key_token` as `start_session` returned them, and each of `pull_request.files` in single quotes after `--`:
+   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are reviewing, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the review reproducible. Then read your settings as the target branch has them: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes (the script takes the target branch and the changed files from it):
 
    ```bash
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo 'settings: {"error": "python was not found"}'; exit 0; }
-   BASE_BRANCH='<pull_request.base>'
-   CE_KEY_URL='<key_url>'
-   CE_KEY_TOKEN='<key_token>'
-   case "$BASE_BRANCH" in ''|-*|*[!A-Za-z0-9._/-]*) echo 'settings: {"error": "the target branch is unknown"}'; exit 0;; esac
-   case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
-   echo "settings:"
-   CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" effective --ref "origin/$BASE_BRANCH" --send-key "$CE_KEY_URL" -- '<path 1>' '<path 2>'
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae pr-settings '<the start_session answer as JSON>' --review
    ```
 
-   **Working-tree and path modes only, from here to the end of step 1.** Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
+   **Working-tree and path modes only, from here to the end of step 1.** Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. Add `--scope '<the path>'` after the JSON when the user scoped the run to a path. The script checks the values itself and never prints a token.
 
    ```bash
-   CE_SESSION='<session_id>'
-   CE_UPLOAD_URL='<upload_url>'
-   CE_UPLOAD_TOKEN='<upload_token>'
-   CE_KEY_URL='<key_url>'
-   CE_KEY_TOKEN='<key_token>'
-   TARGET='<validated target_branch or empty>'
-   SCOPE='<the path the user gave, or empty for the whole change>'
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   CFG="${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py"
-   SKIP=$([ -n "$PY" ] && "$PY" "$CFG" skip 2>/dev/null)
-   case "$SCOPE" in *..*|/*|~*|[A-Za-z]:*) echo "cloudaeye_error=scope_outside_repo"; exit 1;; esac
-   case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
-   case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
-   [ "${#CE_UPLOAD_TOKEN}" = 64 ] || { echo "cloudaeye_error=bad_upload_token"; exit 1; }
-   case "$CE_UPLOAD_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) echo "cloudaeye_error=insecure_url"; exit 1;; esac
-   CE_TMP=$(mktemp -d 2>/dev/null) || CE_TMP="${TMPDIR:-${TMP:-/tmp}}/cloudaeye-$$"
-   mkdir -p "$CE_TMP" || { echo "cloudaeye_error=bad_config"; exit 1; }
-   trap 'rm -rf "$CE_TMP"' EXIT INT TERM
-   printf 'header = "X-Upload-Token: %s"\n' "$CE_UPLOAD_TOKEN" > "$CE_TMP/curl.cfg"
-   chmod 600 "$CE_TMP/curl.cfg" 2>/dev/null || true
-   case "$TARGET" in ''|-*|*[!A-Za-z0-9._/-]*) TARGET="";; esac
-   HEAD_SHA=$(git rev-parse HEAD); BASE=""; SRC=fork_point
-   if [ -n "$TARGET" ]; then
-     git rev-parse --verify -q "origin/$TARGET" >/dev/null 2>&1 || \
-       GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS=echo \
-       git -c credential.helper= fetch -q origin "$TARGET" 2>/dev/null
-     BASE=$(git merge-base "origin/$TARGET" HEAD 2>/dev/null)
-   fi
-   [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
-   git add --intent-to-add . >/dev/null 2>&1
-   PATHS=("${SCOPE:-.}"); SKIPPED=0
-   while IFS= read -r p; do case "$p" in ''|*..*|/*|~*) ;; *) PATHS+=(":(exclude)$p");; esac; done <<< "$SKIP"
-   git diff "$BASE" -- "${PATHS[@]}" > .cloudaeye/session/session.diff
-   git diff --name-only "$BASE" -- "${PATHS[@]}" > "$CE_TMP/files.txt"
-   SCOPED=$(wc -l < "$CE_TMP/files.txt")
-   [ -n "$SKIP" ] && SKIPPED=$(( $(git diff --name-only "$BASE" -- "${SCOPE:-.}" | wc -l) - SCOPED ))
-   TOTAL=$(git diff --name-only "$BASE" | wc -l)
-   UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
-     -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
-   echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$SCOPED total_files=$TOTAL scope=${SCOPE:--} skipped_by_settings=$SKIPPED upload_http=$UP"
-   case "$CE_KEY_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) CE_KEY_URL="";; esac
-   echo "settings:"
-   if [ -n "$PY" ]; then CE_KEY_TOKEN="$CE_KEY_TOKEN" "$PY" "$CFG" effective --send-key "$CE_KEY_URL" --files "$CE_TMP/files.txt"; else echo '{"error": "python was not found"}'; fi
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>' --review
    ```
 
    Read the two summary lines and the `start_session` result; don't re-derive them:
@@ -318,7 +209,7 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    **Pull-request mode:** you did not write this change, so do not pretend to. Use the pull request's own title and description — the server already put them on the session — and say in one line that the intent is the author's stated purpose rather than yours. Do not open the changed files to invent a better one; the server analyses the diff and reading it back spends the user's context window on work the server is doing anyway.
 
    **Working-tree mode:** describe **the code change you just made in this round of edits** — what you implemented and why, plus any security-relevant surface it touches (untrusted input, auth, secrets, serialization, prompts, tool definitions). Not a re-statement of the original ask. The planner uses this verbatim to prioritise within the full category set, and it is the **only** channel for telling the reviewer to leave a previously-flagged issue alone — so if you are asking it to skip something, say which finding and why, in words the user can see.
-   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say that in one line and use `git diff --stat` for the file list — never the full diff.
+   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
 3. Call CloudAEye's `inspect_diff` MCP tool with:
    - `session_id`: the `session_id` printed by step 1
    - `intent`: the summary from step 2

@@ -3,100 +3,53 @@ name: risk-score
 description: Assess the change risk of an open pull request, or of your change before you push it — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
 when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Also before a commit, on the working tree, to see how risky a change is before opening a pull request. Not for who should review it. The history is the repository's, read on GitHub.
 argument-hint: "[#PR [days]] | [--days N]  (no PR number: your working tree)"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
 
-Submit analysis once. A direct response without `job_id` uses the original
-output rules below; report `status: error` and stop. An active response
-(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+Submit the analysis once. An answer without `job_id` is the response itself
+(report `status: error` and stop). With a `job_id`, call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<last progress_id>, report="risk-score")`
+again and again, with no pause, while `status` is `queued`, `running` or
+`retrying`. The server keeps each call open while the job runs.
 
-For a queued response, keep its `job_id` and call
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<progress_id>)`
-using the submitting OAuth account while status is `queued`, `running`, or
-`retrying`. `since` is the `progress_id` of the previous answer (empty on the
-first call). The server keeps the call open while the job runs, so call again
-straight away: no sleep, no pause between calls. In Claude Code the job's steps
-show live under the call, and a long job takes a few calls.
-
-**Show progress.** The developer may never have seen CloudAEye; these lines are
-how they know what is happening. Print each one on its own, exactly as given,
-with no other words around it: no job ids, no "polling", no commentary.
-
-1. Right before submitting, print:
-   `⏳ CloudAEye is assessing the risk of your change. This can take a few minutes; progress shows below.`
-2. An answer that comes back still active carries `message`, one line saying
-   what the job is doing now ("Step 2 of 4 · Reading bug reports and past pull requests · 48s"),
-   and `progress_id`. Print `⏳ ` + `message` only when `progress_id` differs from
-   the one you last printed; an answer where only the time moved prints
-   nothing. Never invent a line the server did not send.
-3. On `completed`, print `✅ CloudAEye finished.` and then the response below.
-4. If that answer carries `next_run`, end with the heading
-   `**To get more from the next run**` and each entry as a bullet, exactly as
-   given, without restating it in your own words. Without it, add no such section.
-
-Stop after 150 calls or 30 minutes from submission, whichever comes first;
-check the deadline before each call. On timeout or unavailable polling,
-report the limitation and retain the ID for later. Never re-submit to check
-progress or start replacement work automatically.
-
-On `completed`, require a `result` dictionary and use it as **the response**
-below, preserving the tool's original fields. Completion is not a clean
-verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
-or `error`; report missing/expired results, never treat them as empty or clean.
-Finish the job before dependent actions, edits, or another review/fix/upload
-on the same session; a pending job does not cover new code.
+- Right before submitting, print:
+  `⏳ CloudAEye is assessing the risk of your change. This can take a few minutes; progress shows below.`
+- Print `⏳ ` + `message` only when `progress_id` changed, exactly as given: no
+  job ids, no "polling", no commentary, never a line the server did not send.
+- On `completed`, print `✅ CloudAEye finished.` and use its `result` as **the response** below, keeping the
+  tool's fields. An inner `status: error` is a refusal, not a clean result.
+- If the answer carries `next_run`, end with the heading
+  `**To get more from the next run**` and each entry as a bullet, exactly as given.
+- Stop after 150 calls or 30 minutes and say the job is still running, with its
+  id. On `failed` or `error`, report it and stop. Never submit again to check
+  progress, and finish the job before any edit, upload or other command on the
+  same session.
 
 ## Steps
 
 ### Repository initialization gate
 
-Before creating a session, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
+  here on; do not recompute it from local Git.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo` for `start_session`. Do not recompute it from local Git.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
-
-Do not start a session until this gate reports `ready` or `initialized`.
+Do not go on until this gate reports `ready` or `initialized`.
 
 
 ### Two ways in
@@ -130,53 +83,20 @@ which needs a pull request), and **nothing can be posted**.
 1. Find your GitHub username, so the author rows are about you:
 
    ```bash
-   gh api user --jq .login 2>/dev/null || true
-   git config user.email 2>/dev/null || true
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae login
    ```
 
-   `AUTHOR` is the first that gives a login: the `gh` output, or the name in an
-   email of the form `<id>+<name>@users.noreply.github.com`. Otherwise leave it
-   empty: the server finds it from your sign-in when it can, and when it cannot,
-   the author rows are reported as not measured.
+   `AUTHOR` is what it prints after `author=`. Empty means leave it out: the
+   server finds it from your sign-in when it can, and when it cannot, the
+   author rows are reported as not measured.
 
-   Then collect the branch and HEAD, call `start_session` with
-   `INIT.repo_full`, `branch` and `head` (no `pr_number`), validate what it
-   returns, and upload the diff — exactly as `/cloudaeye:review` does on a
-   working tree: `session_id` hex digits and dashes, `upload_token` 64 hex
-   characters, `upload_url` HTTPS or localhost HTTP, `target_branch` matching
-   `[A-Za-z0-9._/-]+` or empty. One Bash call; the token goes only into a
-   private temporary curl config.
+   Then call `start_session` with `INIT.repo_full` and the `branch` and `head`
+   the initialization gate printed (no `pr_number`), and upload the change:
+   exactly this one command, alone in its Bash call, with `start_session`'s whole
+   answer as JSON inside single quotes.
 
    ```bash
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   mkdir -p .cloudaeye/session && printf '*\n' > .cloudaeye/.gitignore
-   CE_SESSION='<session_id>'
-   CE_UPLOAD_URL='<upload_url>'
-   CE_UPLOAD_TOKEN='<upload_token>'
-   TARGET='<validated target_branch or empty>'
-   case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
-   case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
-   [ "${#CE_UPLOAD_TOKEN}" = 64 ] || { echo "cloudaeye_error=bad_upload_token"; exit 1; }
-   case "$CE_UPLOAD_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) echo "cloudaeye_error=insecure_url"; exit 1;; esac
-   CE_TMP=$(mktemp -d 2>/dev/null) || CE_TMP="${TMPDIR:-${TMP:-/tmp}}/cloudaeye-$$"
-   mkdir -p "$CE_TMP" || { echo "cloudaeye_error=bad_config"; exit 1; }
-   trap 'rm -rf "$CE_TMP"' EXIT INT TERM
-   printf 'header = "X-Upload-Token: %s"\n' "$CE_UPLOAD_TOKEN" > "$CE_TMP/curl.cfg"
-   chmod 600 "$CE_TMP/curl.cfg" 2>/dev/null || true
-   case "$TARGET" in ''|-*|*[!A-Za-z0-9._/-]*) TARGET="";; esac
-   HEAD_SHA=$(git rev-parse HEAD); BASE=""; SRC=fork_point
-   if [ -n "$TARGET" ]; then
-     git rev-parse --verify -q "origin/$TARGET" >/dev/null 2>&1 || \
-       GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS=echo \
-       git -c credential.helper= fetch -q origin "$TARGET" 2>/dev/null
-     BASE=$(git merge-base "origin/$TARGET" HEAD 2>/dev/null)
-   fi
-   [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
-   git add --intent-to-add . >/dev/null 2>&1
-   git diff "$BASE" > .cloudaeye/session/session.diff
-   UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
-     -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
-   echo "session_id=$CE_SESSION base_source=$SRC diff_bytes=$(wc -c < .cloudaeye/session/session.diff) upload_http=$UP"
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
    ```
 
    `cloudaeye_error=…` or `upload_http` not `200`: report it and stop.
@@ -215,8 +135,15 @@ which needs a pull request), and **nothing can be posted**.
    establish whether the card was posted. Never re-enqueue to retry a post. Offer
    to print the whole card here, then stop.
 
-   **On the working tree** (`subject: "change"`): print `result.card`
-   **verbatim**. It already carries the next step, so do not repeat it. There is
+   **On the working tree** (`subject: "change"`): first save the fuller card, with its tables
+   (exactly this one command, alone in its Bash call):
+
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report risk-score '<result.report as JSON>'
+   ```
+
+   Then your final message is **`result.card` verbatim and whole**, ending with
+   `Full report: <report_path>`. It already carries the next step, so do not repeat it. There is
    no link and no post line: say once that the card is about the change before it
    is pushed, and that running it again on the pull request adds test coverage and
    posts the card. Then stop.

@@ -3,7 +3,7 @@ name: config
 description: Set how CloudAEye works in this repository — ultrareview's approval settings (which checks run, the hard limits it approves within, and its human review policy — auto-assigning reviewers, how many at most, and your instructions), the review's defaults and which LLM reviews the code, the control-flow map's effort and the triage OKRs — in a .cloudaeye.config file at the repository's root or in any directory. Every run first syncs your organisation's review rules into the root .cloudaeye.rules, and a repository with no settings file yet can start from the ultrareview settings saved in the console. One section at a time; you answer in your own words.
 when_to_use: Use when the user runs /cloudaeye:config, or asks to change CloudAEye's settings, approval limits, number of reviewers, review rules or instructions, the review's LLM or model, or to sync the review rules from the console.
 argument-hint: "[directory] [rules]"
-allowed-tools: ["Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules", "mcp__plugin_cloudaeye_cloudaeye__ultrareview_settings", "mcp__cloudaeye__ultrareview_settings"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "Bash", "mcp__plugin_cloudaeye_cloudaeye__review_rules", "mcp__cloudaeye__review_rules", "mcp__plugin_cloudaeye_cloudaeye__ultrareview_settings", "mcp__cloudaeye__ultrareview_settings"]
 ---
 
 ## Where the settings live
@@ -31,10 +31,11 @@ request from its target branch, so a pull request cannot change its own settings
 Start **every** Bash call in this skill with these three lines; shell state does not
 carry between calls.
 
+`CE <arguments>` below always means exactly this one command, alone in its Bash call, typed as written, run from the repository
+(that is what lets it run without asking for permission):
+
 ```bash
-cd "$(git rev-parse --show-toplevel)" || exit 1
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-CE() { "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" "$@"; }
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config <arguments>
 ```
 
 Every `CE` command prints JSON. `{"error": …}` means nothing was written: say the
@@ -43,11 +44,7 @@ error in plain words and ask again; never retry with a value the user did not gi
 ### 1. Which repository
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" 2>/dev/null || { echo "repo=not_git"; exit 0; }
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-[ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py" 2>/dev/null || echo "repo=none"
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/cloudaeye_config.py" show | "$PY" -c "import json,sys;d=json.load(sys.stdin);print('settings_files=' + ' '.join(([d.get('file', '')] if d.get('exists') else []) + d.get('elsewhere', [])))"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config-start
 ```
 
 `repo=not_git`: the settings live in a repository — say so and stop. Keep `repo_full`
@@ -67,9 +64,7 @@ settings can still be changed. Otherwise pass the **whole** answer, unchanged, i
 Bash call:
 
 ```bash
-CE sync-rules --file - <<'CLOUDAEYE_RULES_JSON'
-<the review_rules answer, verbatim>
-CLOUDAEYE_RULES_JSON
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config-file sync-rules '<the review_rules answer as JSON>'
 ```
 
 Say in one line what happened: `synced` rules, with `added` and `removed` by id, and
@@ -94,9 +89,7 @@ defaults, as this file's keys; `source` says whose they are.
   the **whole** answer, unchanged, in one Bash call:
 
 ```bash
-CE seed --file - <<'CLOUDAEYE_SETTINGS_JSON'
-<the ultrareview_settings answer, verbatim>
-CLOUDAEYE_SETTINGS_JSON
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config-file seed '<the ultrareview_settings answer as JSON>'
 ```
 
   Say which settings were written (`set`) and any `problems`. On no, write nothing.
@@ -149,7 +142,7 @@ section means:
    instruction asking for two needs a maximum of 2 or 3). The instructions are one
    paragraph in plain words, for example "Changes under `services/payments/` always need
    two humans." They can ask for more review, never less; team names are the ones in the
-   Teams section of OWNERS.md; a directory's instructions add to the root's.*
+   Teams section of .OWNERS.md; a directory's instructions add to the root's.*
 4. *The floor applies to /cloudaeye:inspect, /security and /review when you give no
    level; ultrareview ignores it. Paths never reviewed are relative to this directory
    and left out of the change before it is uploaded, before a commit only.*
