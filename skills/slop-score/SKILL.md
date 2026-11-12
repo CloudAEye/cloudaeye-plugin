@@ -43,98 +43,54 @@ Reported beside the score and contributing no points: the volume of the change, 
 
 **The band describes review burden, never authorship.** "Strong candidate for manual review before merge" is a claim about a change. "This was AI-generated" is a claim about a person, and this command does not make it — it would be wrong about copy-pasted human work as often as it was right. Report the score, the band and the evidence. Do not translate any of them into a statement about who or what wrote the code, even if the user's question was phrased that way.
 
-## Three modes
+## What the user typed
 
-The argument decides which. Read it before anything else:
-
-| Argument | Mode |
+| Argument | What to do |
 |---|---|
-| *none* | **Working tree** — every uncommitted change. This is the usual one. |
-| `#405`, or bare digits like `405` | **Pull request** — PR 405 of this repository. |
-| anything else — `src/auth/login.ts`, `src/auth/`, `src/auth` | **Path** — only the changes under that file or directory. |
+| *none* | The working tree: every uncommitted change. Go straight to **Steps**. |
+| `#405`, or bare digits like `405` | A pull request. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide pull-request-run`, and follow it where it differs from the steps. |
+| anything else: `src/auth/login.ts`, `src/auth/` | Only the changes under that path. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide scoped-run`. |
 
-Digits mean a pull request. If the user really means a directory named `405`, they write `./405` and you treat it as a path.
+Digits mean a pull request; a directory named `405` is written `./405`. Each guide is that one
+command, alone in its Bash call.
 
 There is deliberately **no severity flag.** A floor drops findings before they are counted, so every numerator would shrink while the denominators stayed put — the score would fall because less was reported rather than because less was wrong. The server refuses one for the same reason.
 
-### Path mode
-
-The scope is applied where the diff is made — `git diff <base> -- <path>` — so only that subtree is ever uploaded. A directory covers everything beneath it; a file covers just that file.
-
-**Say what was excluded.** A score over one directory reads exactly like a score over the whole change. Always name the scope and how many of the changed files it left out — "scored 2 of 7 changed files (src/auth/)". The response echoes a `scope` field for the same reason; do not drop it.
-
-Two signals get weaker under a scope and it is worth one line to the user: duplicate code cannot see a copy that landed in an excluded file, and hallucinated APIs cannot see a definition that lives in one.
-
-### Pull-request mode
-
-Scores an open pull request of *this* repository. The server fetches the diff from GitHub itself, so there is no upload step and no diff leaves the machine.
-
-A pull request must be **open** (drafts are fine), must merge into this repository's **integrated branch**, must **not come from a fork**, and must change **at most 50 files**. The server checks all four before doing any work and refuses with a reason naming what to do. Report that reason as written and stop — never fall back to scoring the working tree, which is a different change.
-
 ## Steps
 
-### Repository initialization gate
+1. Set up the session.
 
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
-
-```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
-```
-
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
-
-- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
-  here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
-
-Any `cloudaeye_error=…` line from a command: report it and stop.
-
-Do not go on until this gate reports `ready` or `initialized`.
-
-1. Prepare and upload the review session.
-
-   The initialization gate already printed the current `branch` and `head`.
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `INIT.repo_full`, the
-   current `branch`, and `head` — no `language`; the server derives the
-   tech-stack hint from the uploaded diff. If the tool is unavailable or returns
-   `status: error`, stop and tell the user to authenticate CloudAEye through `/mcp`.
-
-   **Pull-request mode:** also pass `pr_number` — the digits the user gave, with any `#` stripped. Then **stop here and go to step 2**: the diff is already on the server, so the whole upload block below is skipped, and running it would compute a working-tree diff nobody asked for.
-
-   On `status: error` in this mode, print the `error` field as written and stop. It is the eligibility refusal — closed pull request, wrong base branch, fork, or over the 50-file limit — and each names a different thing to do. Do not paraphrase it into "the PR could not be reviewed", and do not review the working tree instead.
-
-   On success the response carries a `pull_request` block: number, title, `draft`, `base`, `head`, `head_sha` and `changed_files`. Say which pull request you are scoring, and say so if it is a draft — the user may have meant a different one, and the head SHA is what makes the score reproducible.
-
-   **Working-tree and path modes only, from here to the end of step 1.** Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. Add `--scope '<the path>'` after the JSON when the user scoped the run to a path. The script checks the values itself and never prints a token.
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   Read the two summary lines and the `start_session` result; don't re-derive them:
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
+
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
    | output | what to do with it |
    |---|---|
-   | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
-   | `session_id=…` | Pass it to the MCP tool. |
-   | `diff_bytes=0`, `scope=-` | Nothing pending — report "nothing to score" and stop. |
-   | `diff_bytes=0` with a scope | Nothing has changed under that path. Say so **naming the path**, and stop. Do not widen to the whole change — they asked about one place. |
-   | `diff_files` below `total_files` | A scoped score. Report both — "scored 2 of 7 changed files (src/auth/)" — and say duplicate code and hallucinated APIs are weaker under a scope, since neither can see an excluded file. The number here is a number *for that path*, and nothing else in the output says so. |
-   | `cloudaeye_error=scope_outside_repo` | The path escaped the repository (`..`, absolute, or `~`). Report it and stop. |
-   | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim — that is the actionable form. Do **not** quote `target_branch_error`: it names an internal record ("no datastore credentials for tenant 99") and tells the user nothing they can act on. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
+   | `diff_bytes=0` | Nothing pending — report "nothing to score" and stop. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Call CloudAEye's `slop_score` MCP tool **once** with:
-   - `session_id`: the `session_id` printed by step 1
-   - `context`: in **path mode**, set `scope_path` to the path the user gave. It filters nothing — you already narrowed the diff — but it is what makes the response say what it covered, and a narrowed score that does not say so is the one result that misleads. Omit it otherwise.
+   - `session_id`: `SESSION.session_id`
+   - `context`: `{"scope_path": "<the path>"}` when the run is scoped to a path, as the scoped-run guide says. Omit it otherwise.
 
    Do not pass `run_review: false`. It scores only what is already on disk, which on a fresh session is every signal unmeasured — a correct answer and a useless one.
 

@@ -121,14 +121,23 @@ def _validate_branch(remote: str, branch: str) -> None:
         raise PreflightError("invalid_branch") from exc
 
 
-def collect(branch: str = "") -> dict[str, str | bool]:
+def identity() -> dict[str, str]:
+    """Who this repository is to CloudAEye, read from the checkout alone: the provider, full name and URL of
+    its one remote, the current branch and HEAD. `collect` adds the branch to monitor, which may ask the remote."""
     _git("rev-parse", "--show-toplevel")
-    current_branch = _git("branch", "--show-current")
-    if not current_branch:
+    branch = _git("branch", "--show-current")
+    if not branch:
         raise PreflightError("detached_head")
     head = _git("rev-parse", "HEAD")
+    provider, repo_full, repo_url = parse_remote_url(_single_remote_url(_remote_name()))
+    return {"provider": provider, "repo_full": repo_full, "repo_url": repo_url, "branch": branch, "head": head}
+
+
+def collect(branch: str = "") -> dict[str, str | bool]:
+    who = identity()
+    current_branch, head = who["branch"], who["head"]
     remote = _remote_name()
-    provider, repo_full, repo_url = parse_remote_url(_single_remote_url(remote))
+    provider, repo_full, repo_url = who["provider"], who["repo_full"], who["repo_url"]
     base_branch = _base_branch(remote)
     selected_branch = branch.strip()
     if selected_branch:

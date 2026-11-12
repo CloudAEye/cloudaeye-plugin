@@ -29,29 +29,6 @@ again and again, with no pause, while `status` is `queued`, `running` or
 
 ## Steps
 
-### Repository initialization gate
-
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
-
-```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
-```
-
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
-
-- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
-  here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
-
-Any `cloudaeye_error=…` line from a command: report it and stop.
-
-Do not go on until this gate reports `ready` or `initialized`.
-
-
 ### Two ways in
 
 | Argument | Mode |
@@ -71,38 +48,52 @@ which needs a pull request), and **nothing can be posted**.
 
 #### Pull request
 
-1. Call `start_session` with `INIT.repo_full`, the current `branch` and `head`,
-   **and `pr_number`** (the digits, any `#` stripped). The server fetches the
-   pull request and its diff itself; there is nothing to upload. If it returns
-   `status: error`, report the `error` and stop — an ineligible pull request
+1. Run exactly this one command, alone in its Bash call (that is what lets it run
+   without asking the user for permission):
+
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr
+   ```
+
+   Its first line is JSON. Call `start_session` with every field of that line, unchanged, **and `pr_number`** (the digits, any `#` stripped), and keep the answer as `SESSION`.
+   The server fetches the pull request and its diff itself; there is nothing to
+   upload. `SESSION.gate` is `repository`: the repository is not connected yet;
+   run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it. Any other
+   `status: error`: report the `error` and stop — an ineligible pull request
    (closed, from a fork, over 50 files, not into the integrated branch) is an
    answer, not something to work around.
 
 #### Working tree
 
-1. Find your GitHub username, so the author rows are about you:
+1. Run exactly this one command, alone in its Bash call:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae login
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --author
    ```
 
-   `AUTHOR` is what it prints after `author=`. Empty means leave it out: the
-   server finds it from your sign-in when it can, and when it cannot, the
+   Its first line is JSON. Call `start_session` with every field of that line, unchanged, and keep the answer as `SESSION`. `AUTHOR` is what the `author=` line carries — your
+   GitHub username, so the author rows are about you. Empty means leave it out:
+   the server finds it from your sign-in when it can, and when it cannot, the
    author rows are reported as not measured.
 
-   Then call `start_session` with `INIT.repo_full` and the `branch` and `head`
-   the initialization gate printed (no `pr_number`), and upload the change:
-   exactly this one command, alone in its Bash call, with `start_session`'s whole
-   answer as JSON inside single quotes.
+   - `SESSION.gate` is `repository`: the repository is not connected yet. Run
+     `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to
+     authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact
+     change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash
+     call, with `SESSION` as JSON inside single quotes.
 
-   ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
-   ```
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
 
-   `cloudaeye_error=…` or `upload_http` not `200`: report it and stop.
-   `diff_bytes=0`: nothing to assess — say so and stop. `base_source=head`: the
-   diff holds only uncommitted edits, so say the history was compared against
-   your local HEAD.
+   Read the summary lines, the upload's when it ran and the first command's
+   when it was skipped. `cloudaeye_error=…` or `upload_http` not `200`: report it
+   and stop. `diff_bytes=0`: nothing to assess — say so and stop.
+   `base_source=head`: the diff holds only uncommitted edits, so say the history
+   was compared against your local HEAD.
 
 #### Both
 

@@ -39,58 +39,37 @@ With no argument, fall back to asking the user (step 2).
 
 ## Steps
 
-### Repository initialization gate
+1. Set up the session.
 
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
-
-```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
-```
-
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
-
-- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
-  here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
-
-Any `cloudaeye_error=…` line from a command: report it and stop.
-
-Do not go on until this gate reports `ready` or `initialized`.
-
-
-1. Prepare and upload the review session.
-
-   The initialization gate already printed the current `branch` and `head`.
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `INIT.repo_full`, the
-   current `branch`, and `head` — no `language`; the server derives the
-   tech-stack hint from the uploaded diff. If the tool is unavailable or returns
-   `status: error`, stop and tell the user to authenticate CloudAEye through `/mcp`.
-
-   Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. The script checks the values itself and never prints a token.
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   Read the two summary lines and the `start_session` result; don't re-derive them:
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
+
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
    | output | what to do with it |
    |---|---|
-   | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
-   | `session_id=…` | Pass it to the MCP tool. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
-   | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim — that is the actionable form. Do **not** quote `target_branch_error`: it names an internal record ("no datastore credentials for tenant 99") and tells the user nothing they can act on. |
-   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
    | `prior_task` | Offer it for reuse in step 2; never reuse it silently. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Establish the task to verify against. This is the one input the user must supply:
    - **If an invocation argument was given** (see Arguments above), use it — skip the prompt.
    - **Else if step 1 printed a non-empty `prior_task`** (a `check_task` ran against this review session before, no commit since), offer to reuse it: show `prior_task.task_description` (truncated) and ask "verify against this same task again, or a new one?" Don't silently reuse — confirm first.
@@ -104,7 +83,7 @@ Do not go on until this gate reports `ready` or `initialized`.
    - **First check on a review session:** describe what you implemented and why.
    - **Re-check after the user asked you to close gaps:** reference the prior gaps by number and explain how each was addressed, or why it was intentionally left. Don't restate the original task — the verifier already has it via `task_description`.
 4. Call CloudAEye's `check_task` MCP tool with:
-   - `session_id`: the `session_id` printed by step 1
+   - `session_id`: `SESSION.session_id`
    - `task_description`: the URL (github-issue) or verbatim task text from step 2
    - `task_source`: `github-issue` / `jira` / `spec` / `user-text` (defaults to `user-supplied` if omitted)
    - `intent`: the summary from step 3

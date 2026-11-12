@@ -3,7 +3,7 @@ name: implement
 description: Plan a fix for findings a CloudAEye review already produced. You say which ones in your own words — "fix the 2nd point, and use a context manager" — and the server returns a fix plan grounded in the repository's code graph, including the call sites and tests the change affects. It plans; it never edits on its own.
 when_to_use: Use after /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review has returned findings and the user wants help fixing some of them. Fixing a finding directly without this skill is also fine — this is for when the plan should account for the whole repository, not just the file being edited.
 argument-hint: "[finding numbers like [1,3], or nothing for all of them]"
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
@@ -41,35 +41,38 @@ What it adds over you doing it directly is **blast radius**. You can see the dif
 
 ## Steps
 
-1. Prepare and upload the review session.
+1. Set up the session.
 
-   First collect the repository, branch and HEAD: exactly this one command, alone in its Bash call.
-
-   ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae head
-   ```
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with the printed `repo`, `branch` and `head` — no `language`; the server derives the tech-stack hint from the uploaded diff, which describes the change rather than the repo around it. If the tool is unavailable or returns `status: error`, stop and tell the user to authenticate CloudAEye through `/mcp`.
-
-   Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. The script checks the values itself and never prints a token.
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   Read the two summary lines and the `start_session` result; don't re-derive them:
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
+
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
    | output | what to do with it |
    |---|---|
-   | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
-   | `session_id=…` | Pass it to the MCP tool. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending. Say so and stop — a plan for a change that no longer exists cannot be applied. If the user committed since the review, say that too. |
-   | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim. Do **not** quote `target_branch_error`: it names an internal record and tells the user nothing they can act on. |
-   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise the plan is built against stale code. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Call CloudAEye's `implement` MCP tool with:
-   - `session_id`: the `session_id` printed by step 1
+   - `session_id`: `SESSION.session_id`
    - `request`: what the user said, **verbatim**. Three forms, and you pass through whichever they used rather than converting between them:
 
      | They said | You pass |

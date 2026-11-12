@@ -28,37 +28,13 @@ again and again, with no pause, while `status` is `queued`, `running` or
 
 ## Steps
 
-### Repository initialization gate
-
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
-
-```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
-```
-
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
-
-- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
-  here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
-
-Any `cloudaeye_error=…` line from a command: report it and stop.
-
-Do not go on until this gate reports `ready` or `initialized`.
-
-
 ### Two ways in
 
 **With a pull-request number** — `/cloudaeye:control-flow 412` or
 `/cloudaeye:control-flow #412`, the same convention `/cloudaeye:review` takes —
-skip step 1 entirely. Call `start_session` with `INIT.repo_full`, the current
-`branch` and `head`, **and `pr_number`** (the digits, with any `#` stripped);
-the server fetches that pull request and its diff itself, so there is nothing to
-upload. Then go to step 2.
+step 1's command is `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr`: call `start_session` with every field of its first line
+**and `pr_number`** (the digits, with any `#` stripped), and skip the upload.
+The server fetches that pull request and its diff itself. Then go to step 2.
 
 Nothing here asks the user for a GitHub credential, and nothing should: the
 server resolves the repository, its integrated branch and its App installation
@@ -68,42 +44,43 @@ prompt for a key.
 
 **With no argument**, the diff is the working tree and step 1 applies.
 
-1. Prepare and upload the review session.
+1. Set up the session.
 
-   The initialization gate already printed the current `branch` and `head`.
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `INIT.repo_full`, the
-   current `branch`, and `head` — no `language`; the server derives the
-   tech-stack hint from the uploaded diff. If the tool is unavailable or returns
-   `status: error`, stop and tell the user to authenticate CloudAEye through `/mcp`.
-
-   Upload the change: exactly this one command, alone in its Bash call, with `start_session`'s whole answer as JSON inside single quotes. The script checks the values itself and never prints a token.
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>' --settings
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --settings
    ```
 
-   Read the two summary lines and the `start_session` result; don't re-derive them:
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>' --settings
+     ```
+
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
    | output | what to do with it |
    |---|---|
-   | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
-   | `session_id=…` | Pass it to the MCP tool. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to describe" and stop. |
-   | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim — that is the actionable form. Do **not** quote `target_branch_error`: it names an internal record ("no datastore credentials for tenant 99") and tells the user nothing they can act on. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Your settings — the `.cloudaeye.config` files in the repository that cover this
    change's files (`/cloudaeye:config` writes them). On the working tree, step 1
    printed them after `settings:`. On a pull request, read them as its target branch
-   has them: exactly this one command, alone in its Bash call, with `start_session`'s whole answer
-   as JSON inside single quotes:
+   has them: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae pr-settings '<the start_session answer as JSON>'
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae pr-settings '<SESSION as JSON>'
    ```
 
    `control_flow.effort` and `control_flow.cross_repo` in them are your defaults;
@@ -111,7 +88,7 @@ prompt for a key.
    `error` means use CloudAEye's defaults.
 
    Then call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
-   skill's frontmatter) with `session_id` from step 1, `depth` — the effort as hops:
+   skill's frontmatter) with `SESSION.session_id`, `depth` — the effort as hops:
    `low` 1, `medium` 2, `high` 3 — and `cross_repo` when the user or the settings
    give them, and `label` at its default — the tool docstring explains each. Two
    more arguments:

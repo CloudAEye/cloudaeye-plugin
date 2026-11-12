@@ -11,51 +11,52 @@ without asking the user for permission. Run it from the repository.
 
 Any `cloudaeye_error=…` line: report it and stop. Never print a token.
 
-## 1. Check the repository is connected
+## 1. Start the session
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
 ```
 
-It prints `provider`, `repo_url`, `branch` and `head`. Call `initialize_repository`
-with `provider`, `repo_url` and an empty `monitor_branch`. Keep the answer as `INIT`.
+With a pull-request number (`/cloudaeye:review-arch 412` or `#412`), the command is
+`sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr` instead.
 
-- `ready` or `initialized`: go on. `INIT.repo_full` is the repository name from here on.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it. Do not
-  start a session until it ends in `ready` or `initialized`.
+Its first line is JSON. Call `start_session` with every field of that line, unchanged — and `pr_number`
+(digits only) for a pull request — and keep the answer as `SESSION`.
 
-## 2. Start the session and send the change
+- `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run
+  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+- The tool is unavailable or answers `status: error`: stop and tell the user to
+  authenticate CloudAEye through `/mcp`.
 
-Call `start_session` with `INIT.repo_full` and the `branch` and `head` step 1
-printed. If the tool is unavailable or answers `status: error`, stop and tell the
-user to authenticate CloudAEye through `/mcp`.
+## 2. Send the change
 
-**A pull-request number was given** (`/cloudaeye:review-arch 412` or `#412`): also
-pass `pr_number` (digits only) and skip the upload. The server fetches the pull
-request itself. Never ask the user for a GitHub credential.
+**A pull request**: skip this step. The server fetches the pull request itself. Never ask
+the user for a GitHub credential.
 
-**No argument** (the working tree): upload the change. The argument is
-`start_session`'s answer, the whole JSON object, inside single quotes:
+**`SESSION.upload_needed` is `false`**: the server already has this exact change. Skip the
+upload, and read the lines below from step 1's output.
+
+**Otherwise** upload the change. The argument is `SESSION`, the whole JSON object, inside
+single quotes:
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<the start_session answer as JSON>'
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
 ```
 
-Read its two lines; do not re-derive them:
+Read its lines; do not re-derive them:
 
 | output | what to do |
 |---|---|
 | `diff_bytes=0` | Nothing pending. Say "nothing to review" and stop. |
 | `upload_http=` not `200` | The change never reached the server. Stop. |
 | `base_source=fork_point` | Normal. Mention the target branch only if `base_age` is more than a few weeks. |
-| `base_source=head` | Only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, give its `reason` and `remedy` as written. |
+| `base_source=head` | Only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, give its `reason` and `remedy` as written. |
 
 ## 3. Run the review
 
 Print: `⏳ CloudAEye is reviewing what your change does to the architecture. This can take a few minutes; progress shows below.`
 
-Call `review_arch` **once** with `session_id`. `post`: `true` on a pull request,
+Call `review_arch` **once** with `SESSION.session_id`. `post`: `true` on a pull request,
 `false` on the working tree. `context`: `{"scope_path": "<path>"}` only if the
 user named a directory.
 

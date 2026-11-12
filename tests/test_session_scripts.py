@@ -5,7 +5,9 @@ Both run against a real git repository in a temporary directory and a real HTTP 
 """
 from __future__ import annotations
 
+import hashlib
 import http.server
+import json
 import os
 import subprocess
 import sys
@@ -171,6 +173,101 @@ def test_a_report_that_cannot_be_saved_says_why_and_writes_nothing(repo, server,
               env={"CE_REPORT_TOKEN": token})
     assert out.returncode == 1 and out.stdout.strip() == f"report_error={error}"
     assert not (repo / ".cloudaeye" / "reports").exists()
+
+
+# ── start: what start_session is called with, and the change before any upload ─
+
+def start(repo: Path, *extra: str) -> tuple[dict, list[str]]:
+    out = run("cloudaeye_session.py", "start", *extra, cwd=repo)
+    assert out.returncode == 0, out.stdout + out.stderr
+    lines = out.stdout.splitlines()
+    return json.loads(lines[0]), lines[1:]
+
+
+@pytest.fixture
+def remote(repo: Path) -> Path:
+    git(repo, "remote", "add", "origin", "git@github.com:acme/svc.git")
+    return repo
+
+
+def test_start_names_the_repository_and_nothing_of_the_change_before_any_upload(remote):
+    """The first command in a checkout does not know which branch the repository is integrated on, so it
+    cannot cut the diff the upload will cut: it says who the repository is, and the upload does the rest."""
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    first, rest = start(remote)
+    assert first == {"repo": "acme/svc", "branch": "main", "head": git(remote, "rev-parse", "HEAD").strip(),
+                     "provider": "github", "repo_url": "https://github.com/acme/svc"}
+    assert rest == [] and git(remote, "status", "--short").strip() == "M app.py"
+
+
+def test_after_an_upload_start_names_the_change_exactly_as_it_would_be_uploaded(remote, server):
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    (remote / "new_module.py").write_text("y = 1\n", encoding="utf-8")
+    assert "upload_http=200" in upload(remote, server).stdout
+    sent = (remote / ".cloudaeye" / "session" / "session.diff").read_bytes()
+    assert sent in server["body"]
+    before = git(remote, "status", "--porcelain=v1")
+    first, rest = start(remote)
+    assert first["diff_sha256"] == hashlib.sha256(sent).hexdigest()
+    assert first["diff_base"] == git(remote, "rev-parse", "HEAD").strip() and first["diff_target"] == ""
+    assert rest == ["base_source=head base_age=unknown",
+                    f"diff_bytes={len(sent)} diff_files=2 total_files=2 scope=- skipped_by_settings=0",
+                    "changed_files=app.py, new_module.py"]
+    assert git(remote, "status", "--porcelain=v1") == before          # the developer's index is untouched here too
+    # one more edit, or a narrower look, is another change
+    assert start(remote, "--scope", "new_module.py")[0]["diff_sha256"] != first["diff_sha256"]
+    (remote / "app.py").write_text("x = 3\n", encoding="utf-8")
+    assert start(remote)[0]["diff_sha256"] != first["diff_sha256"]
+
+
+def test_start_prints_the_settings_when_asked_as_the_upload_does(remote, server):
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    sent = upload(remote, server, "--review").stdout
+    _, rest = start(remote, "--review")
+    assert rest[3] == "settings:" and json.loads("\n".join(rest[4:])) == json.loads(sent.split("settings:\n", 1)[1])
+    assert "changed_files=app.py\n" in sent, "the upload names the changed files too"
+
+
+def test_an_upload_that_did_not_arrive_is_not_remembered(remote, server):
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    server["status"] = 401
+    assert "upload_http=401" in upload(remote, server).stdout
+    assert "diff_sha256" not in start(remote)[0]
+
+
+def test_a_pull_request_has_no_change_to_work_out_here(remote, server):
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    upload(remote, server)
+    first, rest = start(remote, "--pr")
+    assert "diff_sha256" not in first and rest == []
+
+
+def test_settings_that_name_the_repositorys_own_key_are_always_uploaded(remote, server, monkeypatch, capsys):
+    """The key travels with the upload and is kept for a day, so a change whose settings name one is never
+    told to skip it: `start` says who the repository is and leaves the rest to the upload."""
+    sys.path.insert(0, str(SCRIPTS))
+    import cloudaeye_session
+
+    assert cloudaeye_session._names_a_key('{"review": {"api_key": {"from": "$KEY", "found": true}}}')
+    assert not cloudaeye_session._names_a_key('{"review": {"model": "gpt"}}')
+    assert not cloudaeye_session._names_a_key("") and not cloudaeye_session._names_a_key("not json")
+    (remote / "app.py").write_text("x = 2\n", encoding="utf-8")
+    upload(remote, server)
+    monkeypatch.chdir(remote)
+    monkeypatch.setattr(cloudaeye_session, "settings_text",
+                        lambda c, review, key_url="": '{"review": {"api_key": {"from": "$KEY", "found": true}}}')
+    assert cloudaeye_session.main(["start", "--review"]) == 0
+    printed = capsys.readouterr().out.splitlines()
+    assert len(printed) == 1 and "diff_sha256" not in json.loads(printed[0])
+
+
+@pytest.mark.parametrize("args, error", [(["--scope", "../elsewhere"], "scope_outside_repo")])
+def test_start_refuses_what_the_upload_refuses(remote, args, error):
+    assert run("cloudaeye_session.py", "start", *args, cwd=remote).stdout.strip() == f"cloudaeye_error={error}"
+
+
+def test_start_without_a_remote_says_so(repo):
+    assert run("cloudaeye_session.py", "start", cwd=repo).stdout.strip() == "cloudaeye_error=ambiguous_remote"
 
 
 # ── the one command the skills run ────────────────────────────────────────────

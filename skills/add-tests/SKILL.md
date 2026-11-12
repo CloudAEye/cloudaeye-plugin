@@ -40,8 +40,8 @@ It prints `provider`, `repo_url`, `branch` and `head`. Call
 
 - `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
   here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+- Anything else (`branch_required`, `setup_required`, an error): run
+  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
 
 Any `cloudaeye_error=…` line from a command: report it and stop.
 

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """The plugin's shell steps, behind one command (`sh scripts/cae <step> ...`).
 
+    cae start [--scope PATH] [--settings] [--review] [--pr]
+                                          what `start_session` is called with: the repository, branch and
+                                          HEAD, and the change itself when it can be named before an upload
+    cae guide <name>                      a part of a skill that is read only when it is needed
     cae preflight [--branch B]            the repository's provider, URL, branch and HEAD
     cae head                              repo, branch and HEAD only (no provider check)
     cae upload '<start_session answer>' [--scope PATH] [--settings] [--review]
                                           diff the working tree and upload it
-    cae pr-settings '<start_session answer>' [--review]
+    cae pr-settings '<start_session answer>' [--review] [--guide NAME]
                                           a pull request's settings, read at its target branch
     cae report <name> '<result.report>'   save a command's whole report to .cloudaeye/reports/
     cae login                             the developer's GitHub login, when it can be told
@@ -75,6 +79,19 @@ def upload(args: list[str]) -> int:
                                    "--key-url", str(doc.get("key_url") or ""), *args])
 
 
+def guide(args: list[str]) -> int:
+    """Print `resources/skills/<name>.md`: the branch of a skill that most runs never take. It comes through
+    this command so it needs no permission of its own, and costs a turn only on the run that needs it."""
+    name = args[0] if args else ""
+    path = Path(__file__).resolve().parents[1] / "resources" / "skills" / f"{name}.md"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or not path.is_file():
+        return _fail("cloudaeye_error=unknown_guide")
+    print("(In this guide, `cae <step> ...` is the command this skill already runs — "
+          "`sh <plugin>/scripts/cae` — with those arguments, alone in its Bash call.)\n")
+    print(path.read_text(encoding="utf-8").rstrip())
+    return 0
+
+
 def pr_settings(args: list[str]) -> int:
     """The settings that apply to a pull request's files, as its target branch has them."""
     import cloudaeye_config
@@ -93,11 +110,23 @@ def pr_settings(args: list[str]) -> int:
     if "--review" in args and _allowed_url(str(doc.get("key_url") or "")):
         os.environ["CE_KEY_TOKEN"] = str(doc.get("key_token") or "")
         extra = ["--send-key", str(doc["key_url"])]
+    import contextlib
+    import io
+
+    import cloudaeye_session
+
+    held = io.StringIO()
     try:
-        return cloudaeye_config.main(["effective", "--ref", f"origin/{base}", *extra, "--", *files])
+        with contextlib.redirect_stdout(held):
+            code = cloudaeye_config.main(["effective", "--ref", f"origin/{base}", *extra, "--", *files])
+        text = held.getvalue().strip()
     except SystemExit:
-        print('{"error": "the settings could not be read"}')
-        return 0
+        code, text = 0, '{"error": "the settings could not be read"}'
+    print(text)
+    name = args[args.index("--guide") + 1] if "--guide" in args[:-1] else ""
+    if cloudaeye_session.settings_guide(text, name):
+        print(cloudaeye_session.settings_guide(text, name))
+    return code
 
 
 def report(args: list[str]) -> int:
@@ -110,8 +139,9 @@ def report(args: list[str]) -> int:
     return cloudaeye_report.main(["--url", str(doc.get("url") or ""), "--name", args[0]])
 
 
-def login(_args: list[str]) -> int:
-    """`author=<login>`: from the GitHub CLI when it is signed in, else a noreply commit address."""
+def github_login() -> str:
+    """The developer's GitHub login: from the GitHub CLI when it is signed in, else a noreply commit address,
+    else `""`."""
     found = ""
     for command in (["gh", "api", "user", "--jq", ".login"], ["git", "config", "user.email"]):
         try:
@@ -124,7 +154,12 @@ def login(_args: list[str]) -> int:
         if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})", out or ""):
             found = out
             break
-    print(f"author={found}")
+    return found
+
+
+def login(_args: list[str]) -> int:
+    """`author=<login>`, empty when it cannot be told."""
+    print(f"author={github_login()}")
     return 0
 
 
@@ -201,6 +236,10 @@ def main(argv: list[str] | None = None) -> int:
         import cloudaeye_session
 
         return cloudaeye_session.main(["head"])
+    if command == "start":
+        import cloudaeye_session
+
+        return cloudaeye_session.main(["start", *args])
     if command == "config":
         import cloudaeye_config
 
@@ -210,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
 
         sys.argv = ["create_owners.py", *args]
         return create_owners.main()
-    steps = {"upload": upload, "pr-settings": pr_settings, "report": report, "login": login, "open": open_link,
+    steps = {"upload": upload, "guide": guide, "pr-settings": pr_settings, "report": report, "login": login, "open": open_link,
              "config-start": config_start, "config-file": config_file}
     if command in steps:
         return steps[command](args)
