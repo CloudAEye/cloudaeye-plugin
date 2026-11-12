@@ -14,6 +14,7 @@
 
     session_id=<id> base_source=fork_point|head base_age=<age>
     diff_bytes=<n> diff_files=<n> total_files=<n> scope=<path or -> skipped_by_settings=<n> upload_http=<code>
+        diff_unchanged=true|false|unknown        (on the same line: the server already had this change)
     settings:                                   (only with --settings)
     <the JSON `cloudaeye_config.py effective` prints>
 
@@ -153,7 +154,10 @@ def skip_patterns(root: Path) -> list[str]:
     return out
 
 
-def post_diff(url: str, token: str, diff: bytes, base: str) -> int:
+def post_diff(url: str, token: str, diff: bytes, base: str) -> tuple[int, str]:
+    """The HTTP status, and whether the server already had this exact change: `true`, `false`, or
+    `unknown` when it did not say. The skills read the second to send no new intent for the same
+    change, which is what lets the server answer it from what it stored."""
     boundary = uuid.uuid4().hex
     parts = [
         f'--{boundary}\r\nContent-Disposition: form-data; name="base_sha"\r\n\r\n{base}\r\n'.encode("utf-8"),
@@ -165,11 +169,16 @@ def post_diff(url: str, token: str, diff: bytes, base: str) -> int:
         HEADER: token, "Content-Type": f"multipart/form-data; boundary={boundary}"})
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
-            return int(response.status)
+            status, body = int(response.status), response.read(4096)
     except urllib.error.HTTPError as exc:
-        return int(exc.code)
+        return int(exc.code), "unknown"
     except (urllib.error.URLError, OSError):
-        return 0
+        return 0, "unknown"
+    try:
+        said = json.loads(body.decode("utf-8", "replace")).get("diff_unchanged")
+    except (ValueError, AttributeError):
+        said = None
+    return status, ("true" if said is True else "false" if said is False else "unknown")
 
 
 def head_command() -> int:
@@ -207,10 +216,10 @@ def upload_command(args: argparse.Namespace) -> int:
         listed = scratch / "files.txt"
         listed.write_bytes(files)
         scoped = len(_text(files).splitlines())
-        status = post_diff(args.url, token, diff, base)     # an empty diff too: it replaces a stale one
+        status, unchanged = post_diff(args.url, token, diff, base)  # an empty diff too: it replaces a stale one
         print(f"session_id={args.session} base_source={source} base_age={age}")
         print(f"diff_bytes={len(diff)} diff_files={scoped} total_files={total} scope={scope or '-'} "
-              f"skipped_by_settings={in_scope - scoped} upload_http={status}")
+              f"skipped_by_settings={in_scope - scoped} upload_http={status} diff_unchanged={unchanged}")
         if args.settings or args.review:
             # a review also sends the repository's own LLM key, when its settings name one
             key_url = args.key_url if args.review and allowed_url(args.key_url or "") else ""

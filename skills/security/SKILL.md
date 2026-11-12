@@ -211,9 +211,12 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim — that is the actionable form. Do **not** quote `target_branch_error`: it names an internal record ("no datastore credentials for tenant 99") and tells the user nothing they can act on. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+   | `diff_unchanged=true` | The server already has this exact change — see step 2: pass no `intent`. |
 
    **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Keeping the clone current is the developer's job — the skill never forces a fetch, it just refuses to hide what it used.
 2. Write a one-paragraph intent summary.
+
+   **The same change as last time** (`diff_unchanged=true` on the upload's summary line; in pull-request mode, in `start_session`'s answer): **write no intent and pass none.** The session keeps the one this change was reviewed with, so the server answers from what it stored, in seconds and at no cost; a new paragraph, however close, reads as a new instruction and runs the whole review again. The one exception: the user asked you to leave a flagged finding alone, or to look at something else this time — then write a new intent that says so.
 
    **Pull-request mode:** you did not write this change, so do not pretend to. Use the pull request's own title and description — the server already put them on the session — and say in one line that the intent is the author's stated purpose rather than yours. Do not open the changed files to invent a better one; the server analyses the diff and reading it back spends the user's context window on work the server is doing anyway.
 
@@ -221,7 +224,7 @@ JSON after `settings:`. Keep that JSON as `SETTINGS`; `error` means run without 
    - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
 3. Call CloudAEye's `inspect_diff` MCP tool with:
    - `session_id`: the `session_id` printed by step 1
-   - `intent`: the summary from step 2
+   - `intent`: the summary from step 2; left out altogether for the same change as last time
    - `profile`: `"security"` — **always this value from this skill.**
    - `min_severity`: when the user passed a severity flag, its name with the dashes stripped — `critical`, `high`, `medium` or `low`. Without a flag, `SETTINGS.review.severity_floor` when it is set and not `all`, and say once that the floor came from your settings. Omit it otherwise; never default to a floor nobody asked for.
    - `rules`: `SETTINGS.rules` when there are any — each `{id, text, paths}` as given. `rules_problems` in the answer names any left out; say so.

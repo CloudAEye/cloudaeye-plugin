@@ -53,6 +53,7 @@ def server():
             seen["body"] = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             self.send_response(int(seen["status"]))
             self.end_headers()
+            self.wfile.write(seen.get("answer", b""))
 
         def do_GET(self):
             ok = self.headers.get("X-Report-Token") == "r" * 40
@@ -128,6 +129,28 @@ def test_a_refused_upload_is_reported_not_hidden(repo, server):
     (repo / "app.py").write_text("x = 3\n", encoding="utf-8")
     server["status"] = 401
     assert "upload_http=401" in upload(repo, server).stdout
+
+
+@pytest.mark.parametrize("answer, said", [
+    (b'{"session_id": "0a1b-2c3d", "diff_unchanged": true}', "true"),
+    (b'{"session_id": "0a1b-2c3d", "diff_unchanged": false}', "false"),
+    (b"", "unknown"),                                        # an older server, or a proxy's page
+    (b"<html>ok</html>", "unknown"),
+    (b'["diff_unchanged"]', "unknown"),
+])
+def test_the_upload_says_whether_the_server_already_had_this_change(repo, server, answer, said):
+    """A skill passes no new intent for the same change, which is what lets the server answer a
+    repeat from what it stored. Without this line every new conversation paid for the review again."""
+    (repo / "app.py").write_text("x = 4\n", encoding="utf-8")
+    server["answer"] = answer
+    out = upload(repo, server)
+    assert f"upload_http=200 diff_unchanged={said}" in out.stdout, out.stdout + out.stderr
+
+
+def test_a_refused_upload_never_reads_as_the_same_change(repo, server):
+    (repo / "app.py").write_text("x = 5\n", encoding="utf-8")
+    server["status"], server["answer"] = 401, b'{"diff_unchanged": true}'
+    assert "upload_http=401 diff_unchanged=unknown" in upload(repo, server).stdout
 
 
 def test_the_report_is_saved_whole_under_the_ignored_workspace(repo, server):

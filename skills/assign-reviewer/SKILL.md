@@ -1,6 +1,6 @@
 ---
 name: assign-reviewer
-description: Suggest who should review an open pull request, say why, show their review queue, and suggest what they should check — from code ownership (.OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's queue. Takes a note in your own words after the PR number ("Tom is away", "urgent, nobody busy"). When the repository has no .OWNERS.md yet, it creates ownership at the root from git history first, in your working tree. It only suggests; it requests a review on GitHub only when you ask it to.
+description: Suggest who should review an open pull request, say why, show their review queue, and suggest what they should check — from code ownership (.OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's queue. Takes a note in your own words after the PR number ("Tom is away", "urgent, nobody busy"). When the repository has no .OWNERS.md yet, it creates ownership at the root from git history first, in your working tree. When the recommended reviewer can review in the repository, it requests their review on GitHub; otherwise it only suggests.
 when_to_use: Use when the user asks who should review a pull request, wants a reviewer suggested or assigned, or asks to request a review. Not for whether a pull request is risky (that is /cloudaeye:risk-score).
 argument-hint: "<PR number like #412> [a note: 'Tom is away', 'urgent, nobody busy']"
 allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
@@ -118,39 +118,56 @@ sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae owners --collect
    | `notes` | What could not be read (a tracker, a history). Gaps, never clean results. |
    | `problems` | Lines to fix in the .OWNERS.md files. Mention them once. |
    | `draft` | A draft pull request: say reviews can be requested once it is ready. |
+   | `assignable` | The recommended reviewers who can review in the repository now: who step 3 asks. |
+   | `needs_access` (on a candidate) | A colleague who cannot review in this repository yet. The card says to add them to it first; never request a review from them. |
 
-3. **End there.** Close with the link `[<repo>#<pr_number>](<pr_url>)`. When
-   **Ownership first** ran, add one line: the `.OWNERS.md` files are in the
-   working tree, not committed; commit them through a pull request, and once
-   merged every recommendation reads them from the repository. Never commit them
-   yourself.
+3. **Assign.** Running this command is the developer asking for a reviewer to be
+   assigned, so request the review now, without asking first. `ASK` is the
+   answer's `assignable`: the recommended reviewers who can review in the
+   repository. On an answer with no `assignable` field (an older server), `ASK`
+   is `recommended`, or nothing when `draft` is true.
 
-   **Do not ask who to ask.** The card is a suggestion. The developer may take
-   it to the pull request themselves, or come back with a request.
+   - **`ASK` is empty: request nothing.** The card stands as a suggestion; say why
+     in one line. A draft: reviews can be requested once it is ready. Nobody to
+     suggest: the card says who was left out. The recommended reviewer has
+     `needs_access` in `candidates`: they have to be added to the repository
+     first, so say to add them and run the command again.
+   - **The user asked only for a suggestion** ("just suggest", "don't assign
+     anyone", "who would you pick"): request nothing, and say the card is a
+     suggestion.
+   - **Otherwise** call `assign_reviewer` with `repo`, `pr_number`, `apply=true`,
+     `reviewers=ASK` (the exact logins, no `@`), `expected_head=head_sha` and
+     `expected_base=base_sha` from the recommendation, plus `owners=OWNERS` when
+     **Ownership first** ran. Never add a name, and never ask for anyone with
+     `needs_access`. Then read `assignment.status`:
 
-   If the user answers about *who* rather than asking for a request — "not Ravi
-   either", "someone in Platform", "it's urgent" — that is a new note: call step 1
-   again with the earlier note and the new words together, and print the new card.
+     - `ok` — say who was asked; name anyone in `already_requested` or
+       `already_reviewed` separately.
+     - `failed` — report `error`; nobody new was asked, and the card stands as
+       a suggestion.
+     - `uncertain` — the request may or may not have reached GitHub. Say so, ask
+       the user to check the pull request, and **do not retry**.
 
-4. **Request, only when asked.** Requesting a review notifies people on GitHub,
-   so do it only when the user explicitly asks — "ask Ravi", "request reviews
-   from 1 and 2" — and only for people on the card. Never choose for them. If
-   they name someone who is not a candidate, say so and stop. Call
-   `assign_reviewer` with `repo`, `pr_number`, `apply=true`, `reviewers` = the
-   exact logins (no `@`), and `expected_head=head_sha`, `expected_base=base_sha`
-   from the recommendation, plus `owners=OWNERS` when **Ownership first** ran.
-   Then read `assignment.status`:
+     If the outer `status` is `error` (the pull request moved since the
+     recommendation, someone cannot review there, the CloudAEye GitHub App is
+     not installed), report it and say the card stands as a suggestion; never
+     retry with other names.
 
-   - `ok` — say who was asked; name anyone in `already_requested` or
-     `already_reviewed` separately.
-   - `failed` — report `error`; nobody new was asked.
-   - `uncertain` — the request may or may not have reached GitHub. Say so, ask
-     the user to check the pull request, and **do not retry**.
+4. **Close** with the link `[<repo>#<pr_number>](<pr_url>)`. When **Ownership
+   first** ran, add one line: the `.OWNERS.md` files are in the working tree, not
+   committed; commit them through a pull request, and once merged every
+   recommendation reads them from the repository. Never commit them yourself.
 
-   If the outer `status` is `error` (the pull request moved since the
-   recommendation, someone cannot review there, the CloudAEye GitHub App is not
-   installed), report it and offer a fresh recommendation; never retry with
-   other names.
+   **Do not ask who to ask.** If the user then answers about *who* — "not Ravi
+   either", "someone in Platform", "it's urgent" — that is a new note: run step 1
+   again with the earlier note and the new words together, print the new card
+   and assign as in step 3. A review already requested stays on the pull
+   request; say so.
+
+5. **Someone else, only when asked.** "Ask Ravi too", "request reviews from 1
+   and 2": only for people in `candidates`, and never one with `needs_access`.
+   If they name someone who is not a candidate, say so and stop. The call and
+   its answers are step 3's, with `reviewers` the logins they named.
 
 ## Notes
 
