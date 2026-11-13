@@ -29,6 +29,9 @@ allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_clo
 
    - `ready` or `initialized`: report `INIT.repo_full` as initialized with
      `INIT.target_branch` and stop. This command never creates a session.
+     When `INIT.demo` is true, this is CloudAEye's public demo repository: print
+     `INIT.message` exactly as written, in a fenced `text` block, and stop. Never run
+     the fork command it names; the developer decides.
    - `branch_required`: ask for a branch and retry once.
    - `setup_required`: validate and open `integration_url` using the native browser
      command below, then poll every 10 seconds for at most 30 attempts. Each poll
