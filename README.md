@@ -2,7 +2,7 @@
 
 Govern code at AI speed.
 
-Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye Review Intelligence brings intelligent code review and governance directly into your Claude Code workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
+Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye Review Intelligence brings intelligent code review and governance directly into your coding agent workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
 
 With the CloudAEye plugin, you can automate code reviews and streamline your entire software development workflow.
 
@@ -12,9 +12,9 @@ Go beyond code reviews with AI-powered development assistance. Ask questions acr
 
 For engineering teams, CloudAEye provides additional workflow automation, including PR triage with `cloudaeye:triage-prs`, intelligent reviewer assignment with `cloudaeye:assign-reviewer`, and automated PR checklist enforcement with `cloudaeye:check`. Enterprise teams can also deploy CloudAEye in a **self-hosted environment** with SSO/SAML support, maintaining control over their infrastructure and security requirements.
 
-Get started in minutes: Install the plugin. Connect the MCP server using `/mcp`, then go to your Git repository and run `/cloudaeye:init`. CloudAEye will analyze your repository and build the context needed for intelligent code assistance. This may take 10-15 minutes to complete, depending on the size of the repository. Once initialization is complete, run `/cloudaeye:inspect` or `/cloudaeye:review` and let CloudAEye review your code directly from Claude Code.
+Get started in minutes: Install the plugin. Connect the MCP server using `/mcp`, then go to your Git repository and run `/cloudaeye:init`. CloudAEye will analyze your repository and build the context needed for intelligent code assistance. This may take 10-15 minutes to complete, depending on the size of the repository. Once initialization is complete, run `/cloudaeye:inspect` or `/cloudaeye:review` and let CloudAEye review your code directly from the coding agent.
 
-Claude Code writes the code. CloudAEye helps you ship it with confidence.
+The coding agent writes the code. CloudAEye helps you ship it with confidence.
 
 ## Commands
 
@@ -121,22 +121,22 @@ Every command in full: the [User Guide](https://docs.cloudaeye.com/user-guide/mc
 /plugin install cloudaeye
 ```
 
-Restart Claude Code so the MCP server connects.
+Restart the coding agent so the MCP server connects.
 
 **Cursor:** install through Cursor's [plugin flow](https://cursor.com/docs/plugins) and authenticate the CloudAEye MCP connection. It needs Node.js for the `mcp-remote` bridge, plus Git, Python, Bash and curl (Git Bash on Windows).
 
 ## Authenticate
 
-1. Run `/mcp` in Claude Code.
+1. Run `/mcp` in the coding agent.
 2. Select CloudAEye and choose **Authenticate**.
 3. Complete sign-in in the browser.
 
-Claude Code stores and refreshes the credentials.
+Claude Code/Codex/Cursor stores and refreshes the credentials.
 
 ## Initialize a Repository 
 
 1. cd to your Git repository.
-2. Run `/cloudaeye:init` in Claude Code.
+2. Run `/cloudaeye:init` in the coding agent.
 
 The vectorization may take 10-15 minutes to complete. 
 
