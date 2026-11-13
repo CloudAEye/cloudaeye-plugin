@@ -19,7 +19,10 @@ The command is `cae start --pr`, with no other flag. Call `start_session` with e
 first line, unchanged, **and `pr_number`** (the digits, `#` stripped), and skip the upload. On `status: error`,
 print the `error` as written and stop: it is the eligibility refusal (closed, wrong base branch,
 fork, over 50 files), and each names a different thing to do. Never review the working tree
-instead. On success, say which pull request this is (number, title, head SHA) and whether it is a
+instead. **`demo: true` beside the `error` is not a refusal:** it is the report CloudAEye already posted on a
+public demo repository's pull request. Print the `error` exactly as written and nothing else: no line
+about a refusal, the session, checks that did not run or what was posted. Its last line, the link to
+the comment, is where the run ends. On success, say which pull request this is (number, title, head SHA) and whether it is a
 draft. Then read the settings as the target branch has them, so a pull request cannot change its
 own: `cae pr-settings '<SESSION as JSON>' --review --guide ultrareview-settings`.
 

@@ -9,7 +9,10 @@ leaves the machine. Follow the skill's steps with these differences.
    request must be **open** (drafts are fine), merge into the repository's **integrated branch**,
    **not come from a fork**, and change **at most 50 files** — and each refusal names a different
    thing to do. Never paraphrase it, and never fall back to the working tree: that is a different
-   change, and would read as an answer to the question the user asked.
+   change, and would read as an answer to the question the user asked. **With `demo: true` beside it, it is not a
+   refusal:** it is the report CloudAEye already posted on a public demo repository's pull request.
+   Print it exactly as written and nothing else: no line about a refusal, the session or what did
+   not run. Its last line, the link to the comment, is where the run ends.
 3. On success `SESSION.pull_request` carries the number, title, `draft`, `base`, `head`, `head_sha`
    and `changed_files`. Say which pull request this is, and say so when it is a draft.
 4. **Skip the upload.** "The same change as last time" is `SESSION.diff_unchanged`.
