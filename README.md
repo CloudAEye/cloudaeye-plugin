@@ -1,6 +1,20 @@
-# CloudAEye for Claude Code
+# CloudAEye Plugin
 
-Code review, security checks and review intelligence in Claude Code — on your changes before you commit, or on an open pull request after you push.
+Govern code at AI speed.
+
+Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye Review Intelligence brings intelligent code review and governance directly into your Claude Code workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
+
+With the CloudAEye plugin, you can automate code reviews and streamline your entire software development workflow.
+
+Use `cloudaeye:ultrareview` to automatically approve low-risk PRs, `cloudaeye:review` to identify bugs and correctness issues, `cloudaeye:slop-score` to detect AI-generated code slop, and `cloudaeye:security` to identify OWASP security vulnerabilities. Validate implementations against original tasks and requirements with `cloudaeye:check-task`, analyze architectural impact with `cloudaeye:review-arch`, and perform control-flow analysis with `cloudaeye:control-flow`. You can also assess PR risk using `cloudaeye:risk-score`, which considers bug history, code churn, and incident trends.
+
+Go beyond code reviews with AI-powered development assistance. Ask questions across your codebase and multiple repositories using `cloudaeye:ask`, generate tests with `cloudaeye:test`, explain tickets to help new hires understand their work with `cloudaeye:explain`, generate fix suggestions for review comments with `cloudaeye:implement`, and automatically generate docstrings with `cloudaeye:add-docs`.
+
+For engineering teams, CloudAEye provides additional workflow automation, including PR triage with `cloudaeye:triage-prs`, intelligent reviewer assignment with `cloudaeye:assign-reviewer`, and automated PR checklist enforcement with `cloudaeye:check`. Enterprise teams can also deploy CloudAEye in a **self-hosted environment** with SSO/SAML support, maintaining control over their infrastructure and security requirements.
+
+Get started in minutes: Install the plugin. Connect the MCP server using `/mcp`, then go to your Git repository and run `/cloudaeye:init`. CloudAEye will analyze your repository and build the context needed for intelligent code assistance. This may take 10-15 minutes to complete, depending on the size of the repository. Once initialization is complete, run `/cloudaeye:inspect` or `/cloudaeye:review` and let CloudAEye review your code directly from Claude Code.
+
+Claude Code writes the code. CloudAEye helps you ship it with confidence.
 
 ## Commands
 
@@ -118,6 +132,13 @@ Restart Claude Code so the MCP server connects.
 3. Complete sign-in in the browser.
 
 Claude Code stores and refreshes the credentials.
+
+## Initialize a Repository 
+
+1. cd to your Git repository.
+2. Run `/cloudaeye:init` in Claude Code.
+
+The vectorization may take 10-15 minutes to complete. 
 
 ## Update
 
