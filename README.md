@@ -1,8 +1,8 @@
 # CloudAEye Plugin
 
-Govern code at AI speed.
+**Govern code at AI speed.**
 
-Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye Review Intelligence brings intelligent code review and governance directly into your coding agent workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
+Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye **Review Intelligence** brings intelligent code review and governance directly into your coding agent workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
 
 With the CloudAEye plugin, you can automate code reviews and streamline your entire software development workflow.
 
@@ -12,7 +12,7 @@ Go beyond code reviews with AI-powered development assistance. Ask questions acr
 
 For engineering teams, CloudAEye provides additional workflow automation, including PR triage with `cloudaeye:triage-prs`, intelligent reviewer assignment with `cloudaeye:assign-reviewer`, and automated PR checklist enforcement with `cloudaeye:check`. Enterprise teams can also deploy CloudAEye in a **self-hosted environment** with SSO/SAML support, maintaining control over their infrastructure and security requirements.
 
-Get started in minutes: Install the plugin. Connect the MCP server using `/mcp`, then go to your Git repository and run `/cloudaeye:init`. CloudAEye will analyze your repository and build the context needed for intelligent code assistance. This may take 10-15 minutes to complete, depending on the size of the repository. Once initialization is complete, run `/cloudaeye:inspect` or `/cloudaeye:review` and let CloudAEye review your code directly from the coding agent.
+**Get started in minutes:** Install the plugin. Connect the MCP server using `/mcp`, then go to your Git repository and run `/cloudaeye:init`. CloudAEye will analyze your repository and build the context needed for intelligent code assistance. This may take 10-15 minutes to complete, depending on the size of the repository. Once initialization is complete, run `/cloudaeye:inspect` or `/cloudaeye:review` and let CloudAEye review your code directly from the coding agent.
 
 The coding agent writes the code. CloudAEye helps you ship it with confidence.
 
