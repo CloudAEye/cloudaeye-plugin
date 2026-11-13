@@ -1,9 +1,9 @@
 ---
 name: create-owners
-description: Write OWNERS.md files for this repository from its git history — who writes each part of the code, with their share and the lead contributor — at the root (or a folder you name) and in every sub-folder down to three levels whose people differ from the rest. Leaves a Teams section for people to fill in. Runs locally with Git and Python only; never commits or pushes.
-when_to_use: Use when the user wants to set up or refresh code ownership, create OWNERS.md files, or prepare the repository for /cloudaeye:assign-reviewer. Not for choosing a reviewer.
+description: Write .OWNERS.md files for this repository from its git history — who writes each part of the code, with their share and the lead contributor — at the root (or a folder you name) and in every sub-folder down to three levels whose people differ from the rest. Leaves a Teams section for people to fill in. Runs locally with Git and Python only; never commits or pushes.
+when_to_use: Use when the user wants to set up or refresh code ownership, create .OWNERS.md files, or prepare the repository for /cloudaeye:assign-reviewer. Not for choosing a reviewer.
 argument-hint: "[folder] [--depth N]"
-allowed-tools: ["Bash", "Read"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "Bash", "Read"]
 ---
 
 ## Local only
@@ -14,7 +14,7 @@ working tree and never commits, pushes or opens a pull request.
 
 ## What it writes
 
-Every `OWNERS.md` has two sections:
+Every `.OWNERS.md` has two sections:
 
 - **Contributors**, measured from `git blame` over lines written in the last 12
   months: each person's share of the folder's code and the **lead contributor**,
@@ -27,8 +27,13 @@ Every `OWNERS.md` has two sections:
 **Where files go.** The folder given (default: the repository root) always gets
 one. Every folder down to `--depth` levels below it (default 3) gets its own only
 when the people who wrote it differ enough from the rest of the area around it.
-A folder that already has an `OWNERS.md` keeps it; a file in the older
+A folder that already has a `.OWNERS.md` keeps it; a file in the older
 `Lead Maintainer:` format is left as it is.
+
+**The name starts with a dot**, so the file stays out of directory listings.
+Files from before 9 Nov 2026 are called `OWNERS.md`: the script renames each one
+to `.OWNERS.md`, keeping its Teams lines, and then refreshes it like any other.
+CloudAEye no longer reads the old name.
 
 ## Steps
 
@@ -38,9 +43,7 @@ A folder that already has an `OWNERS.md` keeps it; a file in the older
 2. Run the script from the repository:
 
 ```bash
-for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-[ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/create_owners.py" <folder if given> <--depth N if given>
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae owners <folder if given> <--depth N if given>
 ```
 
    It prints one JSON object. On `"status": "error"`, report `error` and stop.
@@ -48,7 +51,11 @@ for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/
 
 3. Report, briefly:
    - a table of `owners_files`: path, `action` (created, contributors updated,
-     unchanged, older format left as it is) and the lead contributor;
+     unchanged, older format left as it is) and the lead contributor, with
+     *renamed from OWNERS.md* beside a row that has `renamed_from`;
+   - `old_names_left`: folders that have both names, where the old
+     `OWNERS.md` was left as it was; say it can be deleted once its Teams lines
+     are in `.OWNERS.md`;
    - when `shallow` is true: the history is shallow, so the shares cover only
      the commits present; suggest `git fetch --unshallow` and a rerun;
    - `needs_a_handle`: git authors with no GitHub username the history could
@@ -66,17 +73,19 @@ for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/
    Never fill in anyone else's team; people add their own over time.
 
 6. End with: the files are in the working tree; review them with `git diff`
-   and commit them through a pull request like any other change. CloudAEye
+   and commit them through a pull request like any other change (a renamed
+   file shows as `OWNERS.md` deleted and `.OWNERS.md` new until both are
+   staged; `git add -A` on them records the rename). CloudAEye
    reads them from the target branch, so they take effect once merged.
 
 ## Notes
 
-- Never write `OWNERS.md` yourself or edit the Contributors section by hand:
+- Never write `.OWNERS.md` yourself or edit the Contributors section by hand:
   the numbers come from the script, the same way every time.
 - No email address ever goes into the file. A name without a username stays a
   comment.
 - Re-running is safe: it changes Contributors only when the numbers moved, and
   never touches Teams.
 - `/cloudaeye:assign-reviewer` runs this at the root on its own when the target
-  branch has no `OWNERS.md`, and uses the files from the working tree until they
+  branch has no `.OWNERS.md`, and uses the files from the working tree until they
   are merged.

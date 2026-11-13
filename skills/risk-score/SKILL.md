@@ -1,105 +1,111 @@
 ---
 name: risk-score
-description: Assess the change risk of an open pull request — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
-when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Not for who should review it. Pull requests only — the history is the repository's, read on GitHub.
-argument-hint: "<PR number like #412> [days, 7-90, default 21]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+description: Assess the change risk of an open pull request, or of your change before you push it — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
+when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Also before a commit, on the working tree, to see how risky a change is before opening a pull request. Not for who should review it. The history is the repository's, read on GitHub.
+argument-hint: "[#PR [days]] | [--days N]  (no PR number: your working tree)"
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
 
-Submit analysis once. A direct response without `job_id` uses the original
-output rules below; report `status: error` and stop. An active response
-(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+Submit the analysis once. An answer without `job_id` is the response itself
+(report `status: error` and stop). With a `job_id`, call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<last progress_id>, report="risk-score")`
+again and again, with no pause, while `status` is `queued`, `running` or
+`retrying`. The server keeps each call open while the job runs.
 
-For a queued response, keep its `job_id` and poll
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
-the submitting OAuth account while status is `queued`, `running`, or `retrying`.
-Stop after 60 polls or 30 minutes from submission, whichever comes first;
-check the deadline before each call. On timeout or unavailable polling,
-report the limitation and retain the ID for later. Never re-submit to check
-progress or start replacement work automatically.
-
-On `completed`, require a `result` dictionary and use it as **the response**
-below, preserving the tool's original fields. Completion is not a clean
-verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
-or `error`; report missing/expired results, never treat them as empty or clean.
-Finish the job before dependent actions, edits, or another review/fix/upload
-on the same session; a pending job does not cover new code.
+- Right before submitting, print:
+  `⏳ CloudAEye is assessing the risk of your change. This can take a few minutes; progress shows below.`
+- Print `⏳ ` + `message` only when `progress_id` changed, exactly as given: no
+  job ids, no "polling", no commentary, never a line the server did not send.
+- On `completed`, print `✅ CloudAEye finished.` and use its `result` as **the response** below, keeping the
+  tool's fields. An inner `status: error` is a refusal, not a clean result.
+- If the answer carries `next_run`, end with the heading
+  `**To get more from the next run**` and each entry as a bullet, exactly as given.
+- Stop after 150 calls or 30 minutes and say the job is still running, with its
+  id. On `failed` or `error`, report it and stop. Never submit again to check
+  progress, and finish the job before any edit, upload or other command on the
+  same session.
 
 ## Steps
 
-### Repository initialization gate
+### Two ways in
 
-Before creating a session, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+| Argument | Mode |
+|---|---|
+| `#412`, or bare digits like `412`, optionally a window: `#412 30` | **Pull request** — PR 412 of this repository. |
+| *none*, optionally `--days 30` | **Working tree** — your uncommitted and unpushed change, before you open a pull request. |
 
-```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
-```
+The window is 7–90 days, 21 by default. Digits mean a pull request; on the
+working tree the window is given as `--days N`.
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+The history is the repository's either way — bugs, rework and ownership are
+read from GitHub at the integrated branch, and the change's AI slop score runs
+on the change itself. A working tree differs from a pull request in four ways,
+and the card says so: the author is **you**, nothing from a pull request is
+read, **unit-test coverage is not measured** (it comes from the PR checklist,
+which needs a pull request), and **nothing can be posted**.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+#### Pull request
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo` for `start_session`. Do not recompute it from local Git.
+1. Run exactly this one command, alone in its Bash call (that is what lets it run
+   without asking the user for permission):
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr
+   ```
 
-Do not start a session until this gate reports `ready` or `initialized`.
-
-
-### Pull requests only
-
-`/cloudaeye:risk-score 412` or `/cloudaeye:risk-score #412`, optionally followed by
-a window in days (`/cloudaeye:risk-score #412 30`). With no pull-request number, ask for one —
-there is no working-tree mode: bugs, rework and the author's history are read
-from the repository on GitHub, and a working tree has none of them.
-
-1. Call `start_session` with `INIT.repo_full`, the current `branch` and `head`,
-   **and `pr_number`** (the digits, any `#` stripped). The server fetches the
-   pull request and its diff itself; there is nothing to upload. If it returns
-   `status: error`, report the `error` and stop — an ineligible pull request
+   Its first line is JSON. Call `start_session` with every field of that line, unchanged, **and `pr_number`** (the digits, any `#` stripped), and keep the answer as `SESSION`.
+   The server fetches the pull request and its diff itself; there is nothing to
+   upload. `SESSION.gate` is `repository`: the repository is not connected yet;
+   run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it. Any other
+   `status: error`: report the `error` and stop — an ineligible pull request
    (closed, from a fork, over 50 files, not into the integrated branch) is an
    answer, not something to work around.
 
-2. Call `change_risk` with `session_id` and, when the user gave one, `days`.
-   Follow **Queued Result** above, then read `result`. One argument writes,
-   and it needs a decision:
+#### Working tree
 
-   - `post`: **writes the card on the pull request**, where reviewers see it
-     (editing CloudAEye's earlier risk card there rather than adding a second).
-     Pass `true` only after saying in one line — *CloudAEye will post the risk
-     card on pull request #<n>* — and getting a clear yes.
+1. Run exactly this one command, alone in its Bash call:
+
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --author
+   ```
+
+   Its first line is JSON. Call `start_session` with every field of that line, unchanged, and keep the answer as `SESSION`. `AUTHOR` is what the `author=` line carries — your
+   GitHub username, so the author rows are about you. Empty means leave it out:
+   the server finds it from your sign-in when it can, and when it cannot, the
+   author rows are reported as not measured.
+
+   - `SESSION.gate` is `repository`: the repository is not connected yet. Run
+     `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to
+     authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact
+     change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash
+     call, with `SESSION` as JSON inside single quotes.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
+
+   Read the summary lines, the upload's when it ran and the first command's
+   when it was skipped. `cloudaeye_error=…` or `upload_http` not `200`: report it
+   and stop. `diff_bytes=0`: nothing to assess — say so and stop.
+   `base_source=head`: the diff holds only uncommitted edits, so say the history
+   was compared against your local HEAD.
+
+#### Both
+
+2. Call `change_risk` with `session_id`, `days` when the user gave one, and on
+   the working tree `author: AUTHOR` (omit it when empty). Follow **Queued
+   Result** above, then read `result`. One argument writes:
+
+   - `post`: on a **pull request**, always `true` — the card goes on the pull
+     request, as every CloudAEye command posts on a pull request, editing
+     CloudAEye's earlier risk card there rather than adding a second. Never pass
+     it on the working tree: there is nothing to post on, and the server refuses
+     it.
 
    The assessment never writes on bug issues or Jira tickets. Where each bug is
    in the code (its files and who wrote them) is mapped in the background by
@@ -112,11 +118,26 @@ from the repository on GitHub, and a working tree has none of them.
    pull request, the checklist runs for it. Neither is posted; the card's
    footnote says what was filled in.
 
-3. Print `result.card` **verbatim**. It already carries the next step, so do
-   not repeat it. When no post was requested (no `posted`), add one line:
-   *reply "post" to put it on #<n>*. Otherwise report the delivery status and
-   note; `unknown` does not establish whether the card was posted. Never
-   re-enqueue to retry a post. End with the link. Then stop.
+3. **On a pull request:** the card is on the pull request. Print a short summary —
+   the risk score and band, the recommendation (`verdict`: `review` → *human review
+   required*, `approve` → *no extra review needed*) and `next_step` — then *Posted
+   on the pull request:* with `posted.url` (*updated in place* when `edited`), or
+   the delivery `status` and `note` when it is not `ok`; `unknown` does not
+   establish whether the card was posted. Never re-enqueue to retry a post. Offer
+   to print the whole card here, then stop.
+
+   **On the working tree** (`subject: "change"`): first save the fuller card, with its tables
+   (exactly this one command, alone in its Bash call):
+
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report risk-score '<result.report as JSON>'
+   ```
+
+   Then your final message is **`result.card` verbatim and whole**, ending with
+   `Full report: <report_path>`. It already carries the next step, so do not repeat it. There is
+   no link and no post line: say once that the card is about the change before it
+   is pushed, and that running it again on the pull request adds test coverage and
+   posts the card. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
    it opens with a summary (the score, this PR's AI slop, the bugs and rework in
@@ -140,7 +161,8 @@ from the repository on GitHub, and a working tree has none of them.
    | `unmeasured` | Each is a gap in the evidence, not a clean result. Mention them when the user asks whether the change is safe. |
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
    | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this. |
-   | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. |
+   | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. Absent on the working tree: give no link and never construct one. |
+   | `subject` | `change` on the working tree: the card speaks of "this change", coverage is a stated gap, and the author is you. When the author rows say *the author's GitHub login is not known*, suggest signing in to the GitHub CLI (`gh auth login`) so the next run can find it. |
 
 ## Notes
 

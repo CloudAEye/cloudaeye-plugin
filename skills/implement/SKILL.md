@@ -3,29 +3,27 @@ name: implement
 description: Plan a fix for findings a CloudAEye review already produced. You say which ones in your own words — "fix the 2nd point, and use a context manager" — and the server returns a fix plan grounded in the repository's code graph, including the call sites and tests the change affects. It plans; it never edits on its own.
 when_to_use: Use after /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review has returned findings and the user wants help fixing some of them. Fixing a finding directly without this skill is also fine — this is for when the plan should account for the whole repository, not just the file being edited.
 argument-hint: "[finding numbers like [1,3], or nothing for all of them]"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__implement", "mcp__cloudaeye__implement", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
 
-Submit analysis once. A direct response without `job_id` uses the original
-output rules below; report `status: error` and stop. An active response
-(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+Submit the analysis once. An answer without `job_id` is the response itself
+(report `status: error` and stop). With a `job_id`, call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<last progress_id>)`
+again and again, with no pause, while `status` is `queued`, `running` or
+`retrying`. The server keeps each call open while the job runs.
 
-For a queued response, keep its `job_id` and poll
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
-the submitting OAuth account while status is `queued`, `running`, or `retrying`.
-Stop after 60 polls or 30 minutes from submission, whichever comes first;
-check the deadline before each call. On timeout or unavailable polling,
-report the limitation and retain the ID for later. Never re-submit to check
-progress or start replacement work automatically.
-
-On `completed`, require a `result` dictionary and use it as **the response**
-below, preserving the tool's original fields. Completion is not a clean
-verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
-or `error`; report missing/expired results, never treat them as empty or clean.
-Finish the job before dependent actions, edits, or another review/fix/upload
-on the same session; a pending job does not cover new code.
+- Print `⏳ ` + `message` only when `progress_id` changed, exactly as given: no
+  job ids, no "polling", no commentary, never a line the server did not send.
+- On `completed`, use its `result` as **the response** below, keeping the
+  tool's fields. An inner `status: error` is a refusal, not a clean result.
+- If the answer carries `next_run`, end with the heading
+  `**To get more from the next run**` and each entry as a bullet, exactly as given.
+- Stop after 150 calls or 30 minutes and say the job is still running, with its
+  id. On `failed` or `error`, report it and stop. Never submit again to check
+  progress, and finish the job before any edit, upload or other command on the
+  same session.
 
 ## When to run
 
@@ -43,69 +41,38 @@ What it adds over you doing it directly is **blast radius**. You can see the dif
 
 ## Steps
 
-1. Prepare and upload the review session.
+1. Set up the session.
 
-   First collect the local repository identity with one Bash call.
-
-   ```bash
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   mkdir -p .cloudaeye/session && printf '*\n' > .cloudaeye/.gitignore
-   REPO=$(basename -s .git "$(git config --get remote.origin.url)"); [ -n "$REPO" ] || REPO=$(basename "$PWD")
-   BRANCH=$(git rev-parse --abbrev-ref HEAD); HEAD_SHA=$(git rev-parse HEAD)
-   "$PY" -c "import json,sys;print(json.dumps(dict(repo=sys.argv[1],branch=sys.argv[2],head=sys.argv[3])))" "$REPO" "$BRANCH" "$HEAD_SHA"
-   ```
-
-   Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with those three values — no `language`; the server derives the tech-stack hint from the uploaded diff, which describes the change rather than the repo around it. If the tool is unavailable or returns `status: error`, stop and tell the user to authenticate CloudAEye through `/mcp`.
-
-   Validate the returned values before substituting them below: `session_id` must contain only hex digits and dashes, `upload_token` exactly 64 hex characters, `upload_url` must be HTTPS or localhost HTTP, and `target_branch` must match `[A-Za-z0-9._/-]+` without starting with `-`; use an empty target when it does not. Then run this as one Bash call. The upload token is written only to a private temporary curl config and is never printed or stored in the repository.
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   CE_SESSION='<session_id>'
-   CE_UPLOAD_URL='<upload_url>'
-   CE_UPLOAD_TOKEN='<upload_token>'
-   TARGET='<validated target_branch or empty>'
-   cd "$(git rev-parse --show-toplevel)" || exit 1
-   case "$CE_SESSION" in ''|*[!0-9A-Fa-f-]*) echo "cloudaeye_error=bad_session"; exit 1;; esac
-   case "$CE_UPLOAD_TOKEN" in *[!0-9A-Fa-f]*|'') echo "cloudaeye_error=bad_upload_token"; exit 1;; esac
-   [ "${#CE_UPLOAD_TOKEN}" = 64 ] || { echo "cloudaeye_error=bad_upload_token"; exit 1; }
-   case "$CE_UPLOAD_URL" in https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;; *) echo "cloudaeye_error=insecure_url"; exit 1;; esac
-   CE_TMP=$(mktemp -d 2>/dev/null) || CE_TMP="${TMPDIR:-${TMP:-/tmp}}/cloudaeye-$$"
-   mkdir -p "$CE_TMP" || { echo "cloudaeye_error=bad_config"; exit 1; }
-   trap 'rm -rf "$CE_TMP"' EXIT INT TERM
-   printf 'header = "X-Upload-Token: %s"\n' "$CE_UPLOAD_TOKEN" > "$CE_TMP/curl.cfg"
-   chmod 600 "$CE_TMP/curl.cfg" 2>/dev/null || true
-   case "$TARGET" in ''|-*|*[!A-Za-z0-9._/-]*) TARGET="";; esac
-   HEAD_SHA=$(git rev-parse HEAD); BASE=""; SRC=fork_point
-   if [ -n "$TARGET" ]; then
-     git rev-parse --verify -q "origin/$TARGET" >/dev/null 2>&1 || \
-       GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS=echo \
-       git -c credential.helper= fetch -q origin "$TARGET" 2>/dev/null
-     BASE=$(git merge-base "origin/$TARGET" HEAD 2>/dev/null)
-   fi
-   [ -n "$BASE" ] || { BASE=$HEAD_SHA; SRC=head; }
-   git add --intent-to-add . >/dev/null 2>&1
-   git diff "$BASE" > .cloudaeye/session/session.diff
-   UP=$(curl -s -m 120 -K "$CE_TMP/curl.cfg" -o /dev/null -w '%{http_code}' \
-     -F "file=@.cloudaeye/session/session.diff" -F "base_sha=$BASE" "$CE_UPLOAD_URL")
-   echo "session_id=$CE_SESSION base_source=$SRC base_age=$(git log -1 --format=%cr "origin/$TARGET" 2>/dev/null || echo unknown)"
-   echo "diff_bytes=$(wc -c < .cloudaeye/session/session.diff) diff_files=$(git diff --name-only "$BASE" | wc -l) upload_http=$UP"
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   Read the two summary lines and the `start_session` result; don't re-derive them:
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
+
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
+
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
    | output | what to do with it |
    |---|---|
-   | `start_session` unavailable or `status: error` | Stop and tell the user to authenticate CloudAEye through `/mcp`. |
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token`. |
-   | `session_id=…` | Pass it to the MCP tool. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending. Say so and stop — a plan for a change that no longer exists cannot be applied. If the user committed since the review, say that too. |
-   | `base_source=fork_point` | Correct baseline: the fork point off the integrated branch, not its tip. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `start_session` returned `setup_required`, report its `reason` and `remedy` verbatim. Do **not** quote `target_branch_error`: it names an internal record and tells the user nothing they can act on. |
-   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise the plan is built against stale code. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Call CloudAEye's `implement` MCP tool with:
-   - `session_id`: the `session_id` printed by step 1
+   - `session_id`: `SESSION.session_id`
    - `request`: what the user said, **verbatim**. Three forms, and you pass through whichever they used rather than converting between them:
 
      | They said | You pass |
@@ -128,7 +95,8 @@ What it adds over you doing it directly is **blast radius**. You can see the dif
    - **`needs_clarification`** — the request was ambiguous and **nothing was planned**. Ask the user which finding they meant, using the candidates in the message, and stop. Do not pick one yourself: a wrong guess edits the wrong code with the user's apparent blessing.
    - **`plans` empty with `unresolved`** — the request did not match any finding. Show `available_numbers` and ask.
    - **An `error` naming a number that does not exist** — a typo in the list. Report it and stop; the message carries the valid range. Do not re-send a trimmed list on the user's behalf: they asked for something specific and got it wrong, and quietly doing less is worse than saying so.
-   - **Otherwise, show `resolved` first** — one line per finding, each with its `n`, so the user can see the numbers they gave map to the findings they meant. With an explicit list this is a confirmation; with free text it is the reading, and the reading is the part that can be wrong.
+   - **Otherwise, show `resolved` first** — open with `Numbers read from <numbers_from>'s list:`, then one line per finding, each with its `n`, so the user can see the numbers they gave map to the findings they meant. Every command numbers its own list, and the last one shown wins: if the user meant another command's numbers, stop and tell them to run that command again (it answers from what is stored) before `/cloudaeye:implement`. With an explicit list this is a confirmation; with free text it is the reading, and the reading is the part that can be wrong.
+   - **Before the first edit, name every file the plans will touch** that the findings did not name (a new module, a test file, a fixture), in one line. The user agreed to fix findings, not to a refactor they have not seen.
    - **`note`** — present when the code has changed since the review that produced these findings, which is the normal case once you have fixed one thing and come back for the next. Say it in one line before you start editing. Every plan was checked against the current source; this is what makes an *unmarked* plan mean something rather than nothing.
    - A plan marked **`stale`** points at code that has moved since the review. Say so and ask before applying it; it may already be fixed.
    - A plan with **`risk: not_an_edit`** cannot be fixed by changing code — a leaked credential needs rotating and revoking. Report the remedy; do not write a code change that pretends to fix it.
@@ -137,9 +105,10 @@ What it adds over you doing it directly is **blast radius**. You can see the dif
    - Work through `blast_radius`. It names things outside the diff — other call sites with the same defect, callers whose contract changes, tests that assert on the old behaviour. Check each one, and tell the user what you did about it. Ignoring it wastes the only thing this call bought.
    - Do not fix findings that were not planned. The user asked for these.
    - Anything under `out_of_scope` is not a CloudAEye finding — handle it as ordinary work, separately, and say that's what you're doing.
+   - Run the tests only as the repository already runs them. **Never create a virtual environment, install packages or change the environment without asking first**; if the tests cannot run as things are, say so and what they need.
 5. Close the loop.
    - Tell the user what you changed, and suggest re-running the review that produced the findings (`/cloudaeye:inspect`, `/cloudaeye:security` or `/cloudaeye:review`) to confirm the fix landed and introduced nothing new.
-   - When they do, pass `next_intent` from this response as the `intent` — verbatim if you followed the plan, edited if you deviated. It names what was addressed and what was deliberately left, which is the only channel the reviewer has for that.
+   - When they do, pass `next_intent` from this response as the `intent` — verbatim if you followed the plan, edited in the same plain words if you deviated. It names what was addressed and what was deliberately left, which is the only channel the reviewer has for that. Do not print it unless the user asks.
 
 ## Notes
 

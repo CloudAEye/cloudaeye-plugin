@@ -3,29 +3,29 @@ name: explain
 description: Explain a Jira or GitHub issue against the code it actually touches — the components involved, how they work today, and the related patterns and configuration around them. CloudAEye reads the repository's graph and vector store, which is why this answers things the issue text alone cannot.
 when_to_use: Use when the user asks what an issue is about, what it would take to fix it, or which code it touches — before picking up a ticket, or when triaging one someone else filed. Takes a Jira key, a GitHub issue number, or an issue URL.
 argument-hint: "jira <KEY|id> | github <issue#> | <issue URL>"
-allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__explain", "mcp__cloudaeye__explain", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__explain", "mcp__cloudaeye__explain", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
 
-Submit analysis once. A direct response without `job_id` uses the original
-output rules below; report `status: error` and stop. An active response
-(`queued`, `running`, `retrying`) without a non-empty `job_id` is malformed.
+Submit the analysis once. An answer without `job_id` is the response itself
+(report `status: error` and stop). With a `job_id`, call
+`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id, wait_seconds=110, since=<last progress_id>)`
+again and again, with no pause, while `status` is `queued`, `running` or
+`retrying`. The server keeps each call open while the job runs.
 
-For a queued response, keep its `job_id` and poll
-`mcp__plugin_cloudaeye_cloudaeye__get_job_result(job_id)` every 30 seconds using
-the submitting OAuth account while status is `queued`, `running`, or `retrying`.
-Stop after 60 polls or 30 minutes from submission, whichever comes first;
-check the deadline before each call. On timeout or unavailable polling,
-report the limitation and retain the ID for later. Never re-submit to check
-progress or start replacement work automatically.
-
-On `completed`, require a `result` dictionary and use it as **the response**
-below, preserving the tool's original fields. Completion is not a clean
-verdict: report an inner `status: error` as a refusal. Stop on outer `failed`
-or `error`; report missing/expired results, never treat them as empty or clean.
-Finish the job before dependent actions, edits, or another review/fix/upload
-on the same session; a pending job does not cover new code.
+- Right before submitting, print:
+  `⏳ CloudAEye is reading the issue. This can take a few minutes; progress shows below.`
+- Print `⏳ ` + `message` only when `progress_id` changed, exactly as given: no
+  job ids, no "polling", no commentary, never a line the server did not send.
+- On `completed`, print `✅ CloudAEye finished.` and use its `result` as **the response** below, keeping the
+  tool's fields. An inner `status: error` is a refusal, not a clean result.
+- If the answer carries `next_run`, end with the heading
+  `**To get more from the next run**` and each entry as a bullet, exactly as given.
+- Stop after 150 calls or 30 minutes and say the job is still running, with its
+  id. On `failed` or `error`, report it and stop. Never submit again to check
+  progress, and finish the job before any edit, upload or other command on the
+  same session.
 
 ## What this is
 
@@ -40,7 +40,7 @@ for "does my change satisfy this ticket" use `/cloudaeye:check-task`.
 
 ## The answer comes back here
 
-Unlike `/cloudaeye:check-pr`, `/cloudaeye:add-docs` and `/cloudaeye:add-tests`,
+Unlike `/cloudaeye:check`, `/cloudaeye:add-docs` and `/cloudaeye:add-tests`,
 this one does not send the user somewhere else to read the result. The analysis
 is in the `context` field. Print it.
 
@@ -53,51 +53,25 @@ when it happened. For a GitHub issue nothing is posted and the field is absent.
 
 ### Repository initialization gate
 
-Before anything else, run the bundled preflight helper and call the
-session-free initialization tool. This is required before every operational command.
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-   for c in python python3 py; do command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null && { PY=$c; break; }; done
-   [ -n "$PY" ] || { echo "cloudaeye_error=python_not_found"; exit 1; }
-   META=$("$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/repository_preflight.py") || { printf '%s\n' "$META"; exit 1; }
-printf '%s\n' "$META"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
-`provider`, `repo_url`, and an empty `monitor_branch`, and keep its response as
-`INIT`. If it returns `branch_required`, ask `Branch to monitor [base_branch]:`;
-Enter keeps the displayed base branch. Set `BRANCH` to that answer (or the
-displayed base branch); if there is no base branch, require a non-empty answer.
-Rerun the helper with `--branch "$BRANCH"`, set
-`MONITOR_BRANCH` from that helper result, and call initialization again with
-`monitor_branch=MONITOR_BRANCH`. Keep the same `MONITOR_BRANCH` for every retry.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
-If initialization returns `setup_required`, validate and open `integration_url`
-below, then poll every 10 seconds for at most 30 attempts. Each poll must call
-initialization with the original `provider` and `repo_url` and the same
-`monitor_branch=MONITOR_BRANCH`; replace `INIT` with each response. Continue
-only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
-or timeout. Never treat `provider_connected` alone as success.
+- `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
+  here on; do not recompute it from local Git.
+- Anything else (`branch_required`, `setup_required`, an error): run
+  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
 
-When `INIT.status` is `ready` or `initialized`, use `INIT.repo_full` as the
-authoritative `repo`. Do not recompute it from local Git.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
-```bash
-LINK='<integration_url from the tool>'
-case "$LINK" in
-  https://*|http://localhost/*|http://localhost:*|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-  *) echo "cloudaeye_error=insecure_integration_url"; exit 1 ;;
-esac
-if command -v open >/dev/null 2>&1; then open "$LINK"
-elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$LINK"
-elif command -v powershell.exe >/dev/null 2>&1; then
-  CE_LINK="$LINK" powershell.exe -NoProfile -Command 'Start-Process -LiteralPath $env:CE_LINK'
-elif command -v cmd.exe >/dev/null 2>&1; then cmd.exe /c start "" "$LINK"
-else printf 'quick_link=%s\n' "$LINK"
-fi
-```
-
-Do not proceed until this gate reports `ready` or `initialized`.
+Do not go on until this gate reports `ready` or `initialized`.
 
 1. Read the issue reference from the argument.
 
