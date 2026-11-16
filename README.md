@@ -2,7 +2,7 @@
 
 **Govern code at AI speed.**
 
-Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye **Review Intelligence** brings intelligent code review and governance directly into your coding agent workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated. And it’s free for developers.
+Coding agents are flooding engineering pipelines with massive PRs faster than teams can validate, prioritize, understand, and secure them. CloudAEye **Review Intelligence** brings intelligent code review and governance directly into your coding agent workflow, helping you ship code with confidence. In an independent open-source benchmark of AI code review tools, CloudAEye ranked #1 with a 66.7% F1 score, outperforming 20 other tools evaluated ([see the results](https://www.cloudaeye.com/products/code-review/benchmark-2026/)). And it’s free for developers.
 
 With the CloudAEye plugin, you can automate code reviews and streamline your entire software development workflow.
 

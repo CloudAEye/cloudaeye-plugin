@@ -3,7 +3,7 @@
   "name": "cloudaeye",
   "displayName": "CloudAEye",
   "version": "0.31.5",
-  "description": "Code review and governance in Claude Code: bug and OWASP security review, AI-slop score, task validation against the ticket, change risk, architecture and control-flow review, PR triage and reviewer suggestions.",
+  "description": "Code review and governance in Claude Code: bug and OWASP security review, AI-slop score, task validation, change risk, architecture and control-flow review, PR triage and reviewers.",
   "license": "MIT",
   "privacyPolicyUrl": "https://www.cloudaeye.com/privacy-policy.html",
   "author": {
