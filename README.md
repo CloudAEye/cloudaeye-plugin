@@ -6,9 +6,9 @@ Coding agents are flooding engineering pipelines with massive PRs faster than te
 
 With the CloudAEye plugin, you can automate code reviews and streamline your entire software development workflow.
 
-Use `cloudaeye:ultrareview` to automatically approve low-risk PRs, `cloudaeye:review` to identify bugs and correctness issues, `cloudaeye:slop-score` to detect AI-generated code slop, and `cloudaeye:security` to identify OWASP security vulnerabilities. Validate implementations against original tasks and requirements with `cloudaeye:check-task`, analyze architectural impact with `cloudaeye:review-arch`, and perform control-flow analysis with `cloudaeye:control-flow`. You can also assess PR risk using `cloudaeye:risk-score`, which considers bug history, code churn, and incident trends.
+Use `cloudaeye:ultrareview` to tell a low-risk PR that is approved for merge from one that needs a human review, `cloudaeye:review` to identify bugs and correctness issues, `cloudaeye:slop-score` to detect AI-generated code slop, and `cloudaeye:security` to identify OWASP security vulnerabilities. Validate implementations against original tasks and requirements with `cloudaeye:check-task`, analyze architectural impact with `cloudaeye:review-arch`, and perform control-flow analysis with `cloudaeye:control-flow`. You can also assess PR risk using `cloudaeye:risk-score`, which considers bug history, code churn, and incident trends.
 
-Go beyond code reviews with AI-powered development assistance. Ask questions across your codebase and multiple repositories using `cloudaeye:ask`, generate tests with `cloudaeye:test`, explain tickets to help new hires understand their work with `cloudaeye:explain`, generate fix suggestions for review comments with `cloudaeye:implement`, and automatically generate docstrings with `cloudaeye:add-docs`.
+Go beyond code reviews with AI-powered development assistance. Ask questions across your codebase and multiple repositories using `cloudaeye:ask`, generate tests with `cloudaeye:add-tests`, explain tickets to help new hires understand their work with `cloudaeye:explain`, generate fix suggestions for review comments with `cloudaeye:implement`, and automatically generate docstrings with `cloudaeye:add-docs`.
 
 For engineering teams, CloudAEye provides additional workflow automation, including PR triage with `cloudaeye:triage-prs`, intelligent reviewer assignment with `cloudaeye:assign-reviewer`, and automated PR checklist enforcement with `cloudaeye:check`. Enterprise teams can also deploy CloudAEye in a **self-hosted environment** with SSO/SAML support, maintaining control over their infrastructure and security requirements.
 
@@ -46,7 +46,7 @@ The coding agent writes the code. CloudAEye helps you ship it with confidence.
 
 None of them edits your code. `/cloudaeye:implement` returns a plan, and Claude applies it.
 
-**What writes outside your machine:** `check` posts its report on the pull request, and `ultrareview` on a PR posts its whole report as one comment (edited in place when run again; reviewers are named, never requested); `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card on a pull request and reply with a summary and its link (once per commit; the risk card is edited in place); `assign-reviewer` requests reviews only from people you name; `explain` may comment on a Jira issue. `config` writes only `.cloudaeye.config` and `.cloudaeye.rules` in your working tree, and never commits them.
+**What writes outside your machine:** `check` posts its report on the pull request, and `ultrareview` on a PR posts its whole report as one comment (edited in place when run again; reviewers are named, never requested); `add-docs`, `add-tests` and `create-issue` ask first; `control-flow`, `review-arch` and `risk-score` post their card on a pull request and reply with a summary and its link (once per commit; the risk card is edited in place); `assign-reviewer` requests the review from the recommended reviewer when they can review in the repository, and from anyone else only when you name them; `explain` may comment on a Jira issue. `config` writes only `.cloudaeye.config` and `.cloudaeye.rules` in your working tree, and never commits them.
 
 `/cloudaeye:help inspect` prints one command's full manual. It works offline, with no sign-in.
 
@@ -117,11 +117,19 @@ Every command in full: the [User Guide](https://docs.cloudaeye.com/user-guide/mc
 ## Install
 
 ```text
+/plugin install cloudaeye --marketplace CloudAEye/cloudaeye-plugin
+```
+
+On Claude Code older than 2.1.275, add the marketplace first:
+
+```text
 /plugin marketplace add CloudAEye/cloudaeye-plugin
 /plugin install cloudaeye
 ```
 
 Restart the coding agent so the MCP server connects.
+
+The commands run in a terminal coding agent (Claude Code, Cursor, Codex) opened in a Git repository, because they read your changes with `git` and run the plugin's scripts with Bash and Python.
 
 **Cursor:** install through Cursor's [plugin flow](https://cursor.com/docs/plugins) and authenticate the CloudAEye MCP connection. It needs Node.js for the `mcp-remote` bridge, plus Git, Python, Bash and curl (Git Bash on Windows).
 
@@ -158,8 +166,20 @@ Set `CLOUDAEYE_URL` to your OAuth-enabled MCP endpoint before starting Claude Co
 - Long reports (`review-arch`, `control-flow`, `risk-score`, `slop-score`, `ultrareview`) print a short version in the terminal and save the whole report, diagrams included, to `.cloudaeye/reports/<command>.md`. The file is downloaded by the plugin's script and never passes through the model.
 - Pull-request commands (`#412`), `triage-prs` and `assign-reviewer` upload no code: CloudAEye reads GitHub itself.
 - `create-owners` runs locally and sends nothing.
+- `risk-score` and `ultrareview` on your working tree send your GitHub login as the change's author. The script reads it with `gh api user` when the GitHub CLI is signed in, or from a `users.noreply.github.com` commit email, and sends nothing when neither gives one.
+- When your `.cloudaeye.config` names your own LLM API key (written in the file or as an environment variable such as `$OPENAI_API_KEY`), the commands read it and send it to CloudAEye over HTTPS, outside the conversation. CloudAEye stores it encrypted with your session and stops using it after 24 hours, and it is never printed. Left out, the key saved in the CloudAEye console is used.
+- `config` reads your organisation's review rules and ultrareview settings from CloudAEye. It writes only `.cloudaeye.config` and `.cloudaeye.rules` in your working tree.
+- Everything goes to the CloudAEye server the plugin is set to (`https://api.cloudaeye.com/mcp` by default). The scripts contact no other host, except GitHub through `gh` for your login as described above.
 
 Sign-in needs an interactive client, so unattended CI is not supported yet.
+
+## Privacy
+
+How CloudAEye handles your data: [Privacy Policy](https://www.cloudaeye.com/privacy-policy.html) · [Terms](https://www.cloudaeye.com/terms.html). Questions: support@cloudaeye.com.
+
+## License
+
+MIT. See [LICENSE](LICENSE). The plugin is a client of the CloudAEye service, whose use is governed by the terms above.
 
 ## Troubleshooting
 
