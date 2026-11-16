@@ -158,7 +158,13 @@ Then start a new session (or run `/reload-plugins` in a terminal). Auto-update i
 
 ## Self-hosted server
 
-Set `CLOUDAEYE_URL` to your OAuth-enabled MCP endpoint before starting Claude Code; in Cursor, change the URL in `cursor/mcp.json`. The default is `https://api.cloudaeye.com/mcp`.
+The server address is a plugin setting, **Review server URL**, which defaults to `https://api.cloudaeye.com/mcp`. To use your own OAuth-enabled CloudAEye server, set it when you install:
+
+```text
+claude plugin install cloudaeye@cloudaeye --config url=https://<your-host>/mcp
+```
+
+or later with `/plugin configure cloudaeye@cloudaeye`, then start a new session. The `CLOUDAEYE_URL` environment variable is no longer read. In Cursor, change the URL in `cursor/mcp.json`.
 
 ## What leaves your machine
 
