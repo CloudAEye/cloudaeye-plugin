@@ -1,7 +1,7 @@
 ---
 name: review
 description: Full CloudAEye review — bugs and security in one pass — of the uncommitted changes in this repo, of just one file or directory of them, or of an open pull request given its number. Reports findings with file, line and severity, grouped by kind; it never edits code on its own. The widest and most expensive of the CloudAEye passes.
-when_to_use: Use before opening a significant PR, when the user asks for a full, complete or thorough review, when they name a path to review ("/cloudaeye:review src/auth/"), or when they name a pull request ("/cloudaeye:review #405", "review PR 12"). For the routine check after finishing a task use /cloudaeye:inspect; for the security surface alone use /cloudaeye:security.
+when_to_use: "Use before opening a significant PR, when the user asks for a full, complete or thorough review, when they name a path to review (\"/cloudaeye:review src/auth/\"), or when they name a pull request (\"/cloudaeye:review #405\", \"review PR 12\"). For the routine check after finishing a task use /cloudaeye:inspect; for the security surface alone use /cloudaeye:security."
 argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
 allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---

@@ -1,7 +1,7 @@
 ---
 name: check
 description: Run CloudAEye's checklist against an open pull request of this repository, given its number (#405) — docstring coverage, unit-test coverage, README freshness, dependency manifests, PR title and description quality, duplicate code, and a secret scan. Reports what each check found and posts the full report on the pull request; it never edits code on its own.
-when_to_use: Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly ("/cloudaeye:check #405"). This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review. Replaces /cloudaeye:check-pr.
+when_to_use: "Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly (\"/cloudaeye:check #405\"). This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review. Replaces /cloudaeye:check-pr."
 argument-hint: "<#PR number, e.g. #405>"
 allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr"]
 ---
