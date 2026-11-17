@@ -29,81 +29,47 @@ own: `cae pr-settings '<SESSION as JSON>' --review --guide ultrareview-settings`
 The same change as last time is `SESSION.diff_unchanged`. A new change's intent is the pull
 request's own title and description; say in one line that it is the author's stated purpose.
 
-## Steps 1, 4, 11 and 12
+## Step 3
 
-1. **Start the checklist** (pull-request mode, unless turned off). Call
-   `mcp__plugin_cloudaeye_cloudaeye__check_pr` with `repo`: `SESSION.repo_full`,
-   `pr_number`, `wait_seconds: 1` and `detail: true` (the full report, coverage
-   by function included, comes back in `report`). It runs on the hosted service beside the
-   session, so it starts first and is collected in step 4. Keep its
-   `review_id`. `not_configured`, or an error, goes into the Check section and
-   does not stop the run. Never start a second checklist. `status: "ok"` with
-   `reused: true` means it already ran at this commit — nothing was billed or
-   posted again, its report is already on the pull request, and step 4 is
-   skipped.
+Pass `post: true`: the PR number is the request to post, so never ask. Pass no `author` (the
+author is the pull request's) and no `task_description` or `task_source` (the task check is for
+uncommitted changes only). The rest of step 3 stands.
 
-4. **Collect the checklist** (pull-request mode, when step 1 returned a
-   `review_id`). Call `check_pr` with `repo`, `pr_number`, that `review_id`
-   and `detail: true`. On `pending`, call again with the same `review_id`, at most
-   three calls in all; if it is still pending, keep the `review_id` for the
-   Check section and say risk may measure coverage on its own. Collecting it is
-   what posts it, and risk reads its unit-test coverage from that comment.
+On a pull request the server also does what this skill used to do in steps of its own: it starts
+the PR checklist first and collects it later, which posts its own comment and supplies risk's
+unit-test coverage; when a human review is required and assigning is not turned off, it suggests
+reviewers (and requests nobody); and it posts the whole report as one comment — or edits the one
+an earlier run posted — whatever the verdict.
 
-In step 5 (change risk) pass no `author`: the author is the pull request's, and the checklist
-supplies the unit-test coverage.
-
-11. **Suggested reviewers — only when a human review is required.** When step
-    10's `verdict` is `review` **and** this is a pull request **and** step 10 did
-    not return `assign_reviewers: false` (your settings turned assigning off), call
-    `mcp__plugin_cloudaeye_cloudaeye__assign_reviewer` with `repo`:
-    `SESSION.repo_full`, `pr_number`, `require_owners: false`, `count`: step 10's
-    `reviewers`, and `note`: step 10's `reviewer_note` when there is one. It answers
-    directly (no job) and requests nothing. Keep its `card` and the people in
-    `recommended`; the server keeps the same suggestion for the pull
-    request comment, so nothing is passed on. Never call it when the verdict is
-    `approve`, and never with `apply: true` — a review request notifies people,
-    and only the user asks for that. An error goes into the reviewers line and
-    does not stop the run. On uncommitted changes or a path it does not run:
-    there is no pull request to suggest reviewers for.
-
-12. **Post the report — always, in pull-request mode.** A PR number means the
-    report goes on the pull request as a GitHub comment, like every other
-    command's card. Once step 10 has answered — and step 11, when it ran —
-    call `review_summary` again with `session_id`, `post: true` and the **same**
-    `policy` and `author` as step 10. The
-    comment's suggested reviewers, and their card collapsed under them, come
-    from step 11's call at this commit. Do this whatever the verdict,
-    even when `summary` is empty or a step after the review failed — the
-    comment says what did and did not run. It answers from step 10's stored
-    summary without calling the model again, posts the whole report as one
-    comment — or edits the one an earlier run posted — and returns `posted`.
-    Never ask before posting: the PR number is the request. Never post on
-    uncommitted changes or a path.
+In the step-by-step flow (`cae guide ultrareview-steps`), that guide has the pull-request steps,
+and its report section says where the reviewers and the *Posted* line come from.
 
 ## In the report
 
-Under **Suggested reviewers**:
+Under **Suggested reviewers**, by `steps.reviewers`:
 
-- Pull request, step 11 ran: the people in `recommended` — step 10's `reviewers`
-  of them, in order — as `name` (`login`) — `role`, taken from `candidates`, never
-  @-mentioned (a mention notifies them). When fewer were found than asked for,
-  say how many were. Add
-  one line: *a suggestion — no review has been requested;
-  `/cloudaeye:assign-reviewer #<n>` asks for them when you want it.* Then,
-  right under it in the Summary, a small collapsible
-  `<details><summary>How they were suggested (/cloudaeye:assign-reviewer)</summary>`
-  holding step 11's `card` verbatim in a ```text fence: who, why, their review
-  queue and the review focus. It is the only place the card is printed.
-- Pull request, step 11 failed: *none could be suggested* and its `error`.
+- `suggested`: the reviewers line **exactly as the result's `card` has it** — the
+  `**Suggested reviewers:**` line, or, when a review was already requested, the
+  `**Review requested from:**` line with its `**Also suggested:**` line. It names each person as
+  `name` (`login`) — `role`, never @-mentioned (a mention notifies them), and says when fewer were
+  found than asked for. Under a `**Suggested reviewers:**` line add one line: *a suggestion — no
+  review has been requested; `/cloudaeye:assign-reviewer #<n>` asks for them when you want it.*
+  How they were suggested is in the saved report and the pull-request comment. When `card`
+  carries no such line, write *Suggested reviewers: named in the full report and in the pull
+  request comment.* Never name anyone the `card` does not.
+- `none could be suggested`: *Suggested reviewers: none could be suggested.*
+- Anything else: *Suggested reviewers: none suggested —* and the value as given.
 
-**Posted.** In pull-request mode, one line under *What to do next* from step
-12's `posted`: `ok` → *Posted on the pull request:* the link (`url`), saying
+**Posted.** In pull-request mode, one line under *What to do next* from the result's
+`posted`: `ok` → *Posted on the pull request:* the link (`url`), saying
 *updated in place* when `edited` is true and *unchanged* when `unchanged` is;
 `failed` or `unavailable` → *Not posted on the pull request:* and its `note`;
 `unknown` → that delivery could not be confirmed and it will not be retried
-automatically — check the pull request before running again. When step 12
-never ran — the review failed, or a job was still pending at its deadline —
-say so in this line: *Not posted on the pull request: the run did not finish*,
-and why. Never leave a pull-request run without this line.
+automatically — check the pull request before running again. When nothing was
+posted because the run did not finish — the result has `status: "error"`, or the
+job was still pending at its deadline — say so in this line: *Not posted on the
+pull request: the run did not finish*, and why. Never leave a pull-request run
+without this line.
 
-After the report line, end with the link `[<repo>#<pr_number>](<pr_url>)`, where the report now sits.
+After the report line, end with the link `[<repo>#<pr_number>](<pr_url>)`, where the report now
+sits (`<pr_url>` is `https://github.com/<repo>/pull/<pr_number>`).

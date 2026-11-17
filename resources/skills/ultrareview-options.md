@@ -1,13 +1,15 @@
 # Ultrareview's options (only when the user typed `task:` or a flag)
 
-Read them in this order, before step 1.
+Read them in this order, before step 1. Each becomes an argument of step 3's one call (in the
+step-by-step flow, `cae guide ultrareview-steps` says which step takes it).
 
 1. **`task:`** — everything after `task:` to the end of the input is the task,
    verbatim. Route it as `/cloudaeye:check-task` does: GitHub issue URL →
    `task_source="github-issue"`, the URL as `task_description`; Jira keys
    (`\b[A-Z][A-Z0-9]+-\d+\b`, brackets stripped, comma-separated) →
    `task_source="jira"`; anything else → `task_source="user-text"`, the text
-   verbatim. Never summarise it.
+   verbatim. Never summarise it. Pass `task_description` and `task_source` on the
+   working tree or a path only: on a pull request the task check does not run.
 2. **Model options** — `--model` → `review_model`, `--model-provider` →
    `model_provider`, `--invert-model` → `invert_model` (boolean `true` or
    `false`, never a string). They apply to **the review only**. One the user
