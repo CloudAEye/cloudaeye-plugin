@@ -3,8 +3,9 @@
 The server fetches the pull request's diff from GitHub itself: nothing is uploaded, and no diff
 leaves the machine. Follow the skill's steps with these differences.
 
-1. The first command is `cae start --pr`, with no other flag. Call `start_session` with the fields
-   of its first line **and `pr_number`**: the digits the user gave, any `#` stripped.
+1. Find the repository with the skill's first command, and call `start_session` with the same fields
+   **and `pr_number`**: the digits the user gave, any `#` stripped. A command that reads the team's
+   settings (review, inspect, security) also passes `settings: "review"`.
 2. `status: error`: print the `error` as written and stop. It is the eligibility refusal — the pull
    request must be **open** (drafts are fine), merge into the repository's **integrated branch**,
    **not come from a fork**, and change **at most 50 files** — and each refusal names a different
@@ -17,8 +18,9 @@ leaves the machine. Follow the skill's steps with these differences.
    and `changed_files`. Say which pull request this is, and say so when it is a draft.
 4. **Skip the upload.** "The same change as last time" is `SESSION.diff_unchanged`.
 5. A command that reads the team's settings (review, inspect, security) reads them as the target
-   branch has them, so a pull request cannot change its own:
-   `cae pr-settings '<SESSION as JSON>' --review --guide review-settings`.
+   branch has them, so a pull request cannot change its own: they come back as `SESSION.settings`.
+   When it is there, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/review-settings.md` and follow it
+   with `SETTINGS` = `SESSION.settings`; with none, none apply.
 6. A command that takes an intent: you did not write this change, so do not pretend to. Use the pull
    request's own title and description — the server already put them on the session — and say in
    one line that the intent is the author's stated purpose. Do not open the changed files to write a

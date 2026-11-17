@@ -3,7 +3,7 @@ name: help
 description: Show the CloudAEye command catalog or a manual for one command, including arguments, options, examples, and limitations. Documentation only; never runs the command.
 argument-hint: "[command]"
 disable-model-invocation: true
-allowed-tools: ["Read"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## Documentation only

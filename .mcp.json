@@ -2,7 +2,10 @@
   "mcpServers": {
     "cloudaeye": {
       "type": "http",
-      "url": "${user_config.url}"
+      "url": "${user_config.url}",
+      "headers": {
+        "X-CloudAEye-LLM-Key": "${user_config.llm_api_key}"
+      }
     }
   }
 }

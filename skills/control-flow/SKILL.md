@@ -2,7 +2,7 @@
 name: control-flow
 description: Draw what the uncommitted changes in this repo did to the flow of control, as a mermaid sequence diagram with every message marked added, removed or retargeted. The arrows are resolved from the repository's code graph rather than inferred from the diff. Reports; it never edits code.
 when_to_use: Use when the user asks what the change does to the flow, wants a sequence diagram for a PR description, or asks which components now talk to each other and in what order. For a prose summary of the change use /cloudaeye:describe instead.
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__control_flow", "mcp__cloudaeye__control_flow", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## Queued Result
@@ -32,8 +32,8 @@ again and again, with no pause, while `status` is `queued`, `running` or
 
 **With a pull-request number** — `/cloudaeye:control-flow 412` or
 `/cloudaeye:control-flow #412`, the same convention `/cloudaeye:review` takes —
-step 1's command is `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr`: call `start_session` with every field of its first line
-**and `pr_number`** (the digits, with any `#` stripped), and skip the upload.
+find the repository as step 1 does, then call `start_session` with the same fields **and `pr_number`**
+(the digits, with any `#` stripped) and `settings: "read"`, and skip the upload.
 The server fetches that pull request and its diff itself. Then go to step 2.
 
 Nothing here asks the user for a GitHub credential, and nothing should: the
@@ -46,49 +46,62 @@ prompt for a key.
 
 1. Set up the session.
 
-   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
+   Find the repository with this one read-only command. This skill runs no script, so Claude Code
+   asks before the first run of a command it has not been allowed:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --settings
+   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
    ```
 
-   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
+   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
+   GitHub, GitLab or Bitbucket remote.
 
-   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   Then call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `repo_url` = `ORIGIN`, `provider`
+   (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host), `branch` =
+   `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`; its `session_id` is the one every
+   later call takes. In the same turn, Glob `**/.cloudaeye.config` and `**/.cloudaeye.rules` with `TOP` as
+   the path: they are `SETTINGS_FILES`, each a path relative to `TOP`.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
+     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
-   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
-   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
 
-     ```bash
-     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>' --settings
-     ```
-
-   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
-
-   | output | what to do with it |
-   |---|---|
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
-   | `diff_bytes=0` | Nothing pending — report "nothing to describe" and stop. |
-   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
-   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
-
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
-2. Your settings — the `.cloudaeye.config` files in the repository that cover this
-   change's files (`/cloudaeye:config` writes them). On the working tree, step 1
-   printed them after `settings:`. On a pull request, read them as its target branch
-   has them: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes:
+   Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_branch`),
+   `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`, and one `-F 'settings_file=@<path>;filename=<path>'` for each of
+   `SETTINGS_FILES`, at the end. It writes only under `.cloudaeye/`
+   (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
+   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
+   empty, or the command stops at a `git` error before `curl` runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
+   instead.
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae pr-settings '<SESSION as JSON>'
+   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff' -F 'settings=read'
    ```
+
+   It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
+
+   | what came back | what to do with it |
+   |---|---|
+   | `curl: (22)` and an error | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+   | `diff_files` is `0` | Nothing pending — report "nothing to describe" and stop. |
+   | `settings` | The team's settings that apply to this change (`SETTINGS`). Use `SETTINGS.control_flow`'s values as below. With no `settings`, none apply. |
+   | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
+
+   **Say which baseline applied:** the change against where this branch forked off
+   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+   about it is the one failure mode that misleads.
+2. Your settings — the `.cloudaeye.config` files in the repository that cover this
+   change's files (files your team commits). On the working tree they are the upload's
+   `settings`; on a pull request, `SESSION.settings`, read as its target branch has them. With
+   neither, none apply.
 
    `control_flow.effort` and `control_flow.cross_repo` in them are your defaults;
    what the user asks for in this run wins. Print each of `problems` once. An
    `error` means use CloudAEye's defaults.
 
-   Then call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (pre-approved in this
-   skill's frontmatter) with `SESSION.session_id`, `depth` — the effort as hops:
+   Then call `mcp__plugin_cloudaeye_cloudaeye__control_flow` **once** (Claude Code asks before its
+   first use) with `SESSION.session_id`, `depth` — the effort as hops:
    `low` 1, `medium` 2, `high` 3 — and `cross_repo` when the user or the settings
    give them, and `label` at its default — the tool docstring explains each. Two
    more arguments:
@@ -113,11 +126,11 @@ prompt for a key.
    `posted.already_posted`, or the delivery `status` and `note` when it is not `ok`.
    Offer to print the whole card here, then stop.
 
-   **On the working tree:** first save the full report, which has the diagrams (exactly this one
-   command, alone in its Bash call):
+   **On the working tree:** first save the full report, which has the diagrams, with this one
+   command:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report control-flow '<result.report as JSON>'
+   mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/control-flow.md && echo 'report_path=.cloudaeye/reports/control-flow.md'
    ```
 
    Then your final message is **the resolved response's `card`, exactly as given and whole** (it is

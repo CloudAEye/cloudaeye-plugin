@@ -1,9 +1,10 @@
 """The launcher steps `test_session_scripts.py` does not cover: a pull request's settings, the
 developer's login, opening the connect page, and the config and owners steps.
 
-Each is one plain `sh scripts/cae <step> ...` call in a skill, pre-approved so the developer is
-never prompted, and each has to hold up on whatever the tool answered or the machine has: a
-missing `gh`, a branch name that is really an option, a page that must not open over plain HTTP.
+Only `create-owners` still runs one from a skill (`sh scripts/cae owners`); the other skills
+run plain git and curl steps (tests/test_skills.py). Each step has to hold up on whatever the
+tool answered or the machine has: a missing `gh`, a branch name that is really an option, a page
+that must not open over plain HTTP.
 The steps that read git run against a real repository; the two that reach outside it (the GitHub
 CLI, the browser) are called in-process with those stood in for.
 """
@@ -75,45 +76,6 @@ def test_a_guide_is_printed_by_the_command_the_skills_already_run(repo):
         assert refused.returncode == 1 and refused.stdout.strip() == "cloudaeye_error=unknown_guide", bad
 
 
-def test_every_guide_a_skill_names_exists_and_every_guide_is_named():
-    import re
-
-    root = SCRIPTS.parent
-    guides = {p.stem for p in (root / "resources" / "skills").glob("*.md")}
-    named: set[str] = set()
-    for text in [p.read_text(encoding="utf-8") for p in (root / "skills").glob("*/SKILL.md")] + [
-            p.read_text(encoding="utf-8") for p in (root / "resources" / "skills").glob("*.md")]:
-        named |= set(re.findall(r"(?:cae guide|--guide) ([a-z0-9][a-z0-9-]*)", text))
-    assert named - guides == set(), "a skill names a guide that does not exist"
-    assert guides - named == set(), "a guide no skill names is never read"
-
-
-def test_every_skill_that_starts_a_session_sets_up_the_same_way():
-    """One command, then `start_session`, then an upload only when the server asks. The start and the upload
-    must cut the same change (the same flags): `start` names what the upload would send, and with different
-    flags the server would never find the change it holds, so every command would upload again."""
-    import re
-
-    flag = re.compile(r"--[a-z-]+(?: [a-z][a-z0-9-]*)?")
-    seen = 0
-    for path in sorted((SCRIPTS.parent / "skills").glob("*/SKILL.md")):
-        text = path.read_text(encoding="utf-8")
-        name = path.parent.name
-        tools = text.split("allowed-tools:", 1)[-1].split("\n---", 1)[0]
-        if "__start_session" not in tools or name == "init":
-            continue
-        seen += 1
-        assert "scripts/cae start" in text, name
-        assert "cae preflight" not in text and "cae head" not in text and "INIT." not in text, name
-        assert "__initialize_repository" in tools, f"{name}: the connect guide calls it, so it is approved up front"
-        assert "cae guide connect-repository" in text and "upload_needed" in text, name
-        starts = {tuple(f for f in flag.findall(line) if f != "--author")
-                  for line in re.findall(r"scripts/cae start([^\n`]*)", text) if "--pr" not in line}
-        uploads = {tuple(flag.findall(line)) for line in re.findall(r"scripts/cae upload '<SESSION as JSON>'([^\n`]*)", text)}
-        assert len(starts) == 1 and starts == uploads, (name, starts, uploads)
-    assert seen >= 12
-
-
 def test_every_command_a_skill_or_guide_shows_is_one_the_launcher_takes():
     """A skill is followed to the letter, so a step the launcher does not have, or a flag a step does not take,
     is a command that fails on the developer's machine: ultrareview's upload once carried `--author`, which only
@@ -134,7 +96,7 @@ def test_every_command_a_skill_or_guide_shows_is_one_the_launcher_takes():
             assert step in steps, (path.parent.name, step)
             if step in flags:
                 assert set(re.findall(r"(?<![\w-])--[a-z-]+", rest)) <= flags[step], (path.name, step, rest)
-    assert shown > 40
+    assert shown >= 1  # create-owners; the other skills run no script (tests/test_skills.py)
 
 
 def test_start_goes_through_the_one_command(repo):

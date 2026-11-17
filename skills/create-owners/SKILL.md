@@ -3,7 +3,7 @@ name: create-owners
 description: Write .OWNERS.md files for this repository from its git history — who writes each part of the code, with their share and the lead contributor — at the root (or a folder you name) and in every sub-folder down to three levels whose people differ from the rest. Leaves a Teams section for people to fill in. Runs locally with Git and Python only; never commits or pushes.
 when_to_use: Use when the user wants to set up or refresh code ownership, create .OWNERS.md files, or prepare the repository for /cloudaeye:assign-reviewer. Not for choosing a reviewer.
 argument-hint: "[folder] [--depth N]"
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "Bash", "Read"]
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "Read"]
 ---
 
 ## Local only

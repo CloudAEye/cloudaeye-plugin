@@ -3,7 +3,7 @@ name: explain
 description: Explain a Jira or GitHub issue against the code it actually touches — the components involved, how they work today, and the related patterns and configuration around them. CloudAEye reads the repository's graph and vector store, which is why this answers things the issue text alone cannot.
 when_to_use: Use when the user asks what an issue is about, what it would take to fix it, or which code it touches — before picking up a ticket, or when triaging one someone else filed. Takes a Jira key, a GitHub issue number, or an issue URL.
 argument-hint: "jira <KEY|id> | github <issue#> | <issue URL>"
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__explain", "mcp__cloudaeye__explain", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## Queued Result
@@ -53,23 +53,25 @@ when it happened. For a GitHub issue nothing is posted and the field is absent.
 
 ### Repository initialization gate
 
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
+Find the repository with this one read-only command. This skill runs no script, so Claude Code
+asks before the first run of a command it has not been allowed:
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
+git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
 ```
 
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
+It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `repo_url` = `ORIGIN`, `provider`
+(`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host) and an empty
+`monitor_branch`, and keep its response as `INIT`.
 
 - `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
   here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): run
-  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-Any `cloudaeye_error=…` line from a command: report it and stop.
+An error from the command (not a Git repository, no `origin` remote): say CloudAEye needs a Git
+repository with a GitHub, GitLab or Bitbucket remote, and stop.
 
 Do not go on until this gate reports `ready` or `initialized`.
 

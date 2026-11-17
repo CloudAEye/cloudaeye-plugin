@@ -2,29 +2,32 @@
 name: review-arch
 description: Review what the uncommitted changes in this repo (or a pull request) did to the architecture — which layers and components the change touched, every dependency it added or removed, layer violations, new import cycles, new calls to outside systems, breaks another repository would feel, and the questions a senior engineer would ask. Reports; it never edits code and finds no bugs.
 when_to_use: Use before opening or merging a pull request that adds a dependency, a new module, a new external system or crosses a layer, when a reviewer asks "does this fit the architecture", or when the user asks for an architecture review, a layer check, or "what does this change touch". For bugs use /cloudaeye:inspect; for the call sequence use /cloudaeye:control-flow.
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__review_arch", "mcp__cloudaeye__review_arch", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
-Run the steps in order. Each shell step is **exactly the one command shown**, alone in its
-Bash call, typed as written (no `cd`, no variables, nothing chained): that is what lets it run
-without asking the user for permission. Run it from the repository.
-
-Any `cloudaeye_error=…` line: report it and stop. Never print a token.
+Run the steps in order. This skill runs no script: each shell step is the one plain `git` or
+`curl` command shown, and Claude Code asks before the first run of a command it has not been
+allowed. Never print a token.
 
 ## 1. Start the session
 
+Find the repository with this one read-only command:
+
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
+git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
 ```
 
-With a pull-request number (`/cloudaeye:review-arch 412` or `#412`), the command is
-`sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr` instead.
+It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
+(not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
+GitHub, GitLab or Bitbucket remote.
 
-Its first line is JSON. Call `start_session` with every field of that line, unchanged — and `pr_number`
-(digits only) for a pull request — and keep the answer as `SESSION`.
+Call `start_session` with `repo_url` = `ORIGIN`, `provider` (`github` for github.com, `bitbucket`
+for bitbucket.org, `gitlab` for a GitLab host), `branch` = `BRANCH` and `head` = `HEAD` — and
+`pr_number` (digits only) for a pull request (`/cloudaeye:review-arch 412` or `#412`) — and keep
+the answer as `SESSION`.
 
-- `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run
-  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+- `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 - The tool is unavailable or answers `status: error`: stop and tell the user to
   authenticate CloudAEye through `/mcp`.
 
@@ -33,24 +36,23 @@ Its first line is JSON. Call `start_session` with every field of that line, unch
 **A pull request**: skip this step. The server fetches the pull request itself. Never ask
 the user for a GitHub credential.
 
-**`SESSION.upload_needed` is `false`**: the server already has this exact change. Skip the
-upload, and read the lines below from step 1's output.
-
-**Otherwise** upload the change. The argument is `SESSION`, the whole JSON object, inside
-single quotes:
+**Otherwise** upload the change with this one command, writing in `<TARGET>`
+(`SESSION.target_branch`), `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes only under
+`.cloudaeye/` (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
+   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When
+`SESSION.target_branch` is empty, or the command stops at a `git` error before `curl` runs, read
+`${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md` instead.
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
 ```
 
-Read its lines; do not re-derive them:
+It prints the upload's settings file, then the server's answer as JSON:
 
-| output | what to do |
+| what came back | what to do |
 |---|---|
-| `diff_bytes=0` | Nothing pending. Say "nothing to review" and stop. |
-| `upload_http=` not `200` | The change never reached the server. Stop. |
-| `base_source=fork_point` | Normal. Mention the target branch only if `base_age` is more than a few weeks. |
-| `base_source=head` | Only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, give its `reason` and `remedy` as written. |
+| `diff_files` is `0` | Nothing pending. Say "nothing to review" and stop. |
+| `curl: (22)` and an error | The change never reached the server. Stop. |
 
 ## 3. Run the review
 
@@ -76,10 +78,10 @@ On `completed`, print `✅ CloudAEye finished.` and use `result` below. An inner
 ## 4. Show the result
 
 **Working tree.** First save the full report, which has the pictures and the
-repository's layers (exactly this one command, alone in its Bash call):
+repository's layers, with this one command:
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report review-arch '<result.report as JSON>'
+mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/review-arch.md && echo 'report_path=.cloudaeye/reports/review-arch.md'
 ```
 
 Then your final message is **`result.card` exactly as given and whole**: it is

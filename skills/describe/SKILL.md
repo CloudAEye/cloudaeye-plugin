@@ -2,7 +2,7 @@
 name: describe
 description: Describe the uncommitted changes in this repo — a Change Description heading and an Important Changes bullet list, in plain markdown ready to paste into a PR or a commit message. Trivial diffs short-circuit to one line.
 when_to_use: Use when the user asks what changed, for a PR description, a commit message, or a summary of the pending diff.
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__describe_change", "mcp__cloudaeye__describe_change", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## Queued Result
@@ -28,41 +28,55 @@ again and again, with no pause, while `status` is `queued`, `running` or
 
 1. Set up the session.
 
-   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
+   Find the repository with this one read-only command. This skill runs no script, so Claude Code
+   asks before the first run of a command it has not been allowed:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
+   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
    ```
 
-   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
+   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
+   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
+   GitHub, GitLab or Bitbucket remote.
 
-   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   Then call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `repo_url` = `ORIGIN`, `provider`
+   (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host), `branch` =
+   `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`; its `session_id` is the one every
+   later call takes.
+
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
+     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
-   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
-   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
 
-     ```bash
-     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
-     ```
+   Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_branch`),
+   `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes only under `.cloudaeye/`
+   (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
+   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
+   empty, or the command stops at a `git` error before `curl` runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
+   instead.
 
-   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
+   ```bash
+   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
+   ```
 
-   | output | what to do with it |
+   It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
+
+   | what came back | what to do with it |
    |---|---|
-   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
-   | `diff_bytes=0` | Nothing pending — report "nothing to describe" and stop. |
-   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
-   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
-   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+   | `curl: (22)` and an error | The diff never reached the server. Stop; otherwise a stale result can look clean. |
+   | `diff_files` is `0` | Nothing pending — report "nothing to describe" and stop. |
+   | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
+   **Say which baseline applied:** the change against where this branch forked off
+   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+   about it is the one failure mode that misleads.
 2. Call CloudAEye's `describe_change` MCP tool with:
    - `session_id`: `SESSION.session_id`
-   - `intent`: the user's original task request from this coding session, passed verbatim. Do not paraphrase. If `/cloudaeye:review` already set an intent this turn, pass the same string. Write it from your own working context; do not read `.cloudaeye/session/session.diff` or run `git diff` to compose it — the server already has the diff.
+   - `intent`: the user's original task request from this coding session, passed verbatim. Do not paraphrase. If `/cloudaeye:review` already set an intent this turn, pass the same string. Write it from your own working context; do not read `.cloudaeye/session.diff` or run `git diff` to compose it — the server already has the diff.
    - `context`: omit unless you have something extra to pass (e.g. `pr_title`). Identity fields are already on the session.
 3. Print the `description` field from the response verbatim. It is plain markdown — a `# Change Description` paragraph followed by an `## Important Changes` bullet list — meant for direct consumption (no XML wrappers, no `<details>`). For trivial diffs the description is a single-sentence "Trivial change —" line; do not pad it.
 
-   Call `mcp__plugin_cloudaeye_cloudaeye__describe_change`; it is pre-approved in this skill's frontmatter.
+   Call `mcp__plugin_cloudaeye_cloudaeye__describe_change`; it is Claude Code asks before its first use.
 
    Check `context_refresh.status` first. On `skipped` or `failed` the stored code graph was not refreshed with this diff, so the answer is based on the pre-edit code plus the diff text alone — say so in one line and quote `context_refresh.reason`. It is usually an expired GitHub installation token, which the user has to fix server-side.
 

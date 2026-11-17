@@ -3,7 +3,7 @@ name: risk-score
 description: Assess the change risk of an open pull request, or of your change before you push it — who wrote it, what it touches, and what those files and that author have been through over the last few weeks (bugs, rework, ownership, the author's pull requests, AI slop, test coverage) — and say whether it needs a human reviewer and why. Reports a risk score out of 100 with its band (low / medium / high), this PR's AI slop score, the bugs and rework in the files it changes beside the repository's rates, a verdict and the next step, what needs attention, the author with only the trends that got worse, and each changed file with bugs as a code area (stability, regression rate, rework, recent issues); it names no reviewer, never edits code and finds no bugs in the change itself.
 when_to_use: Use when the user asks how risky a pull request is, whether it can be merged without a careful review, or for a change-risk card. Also before a commit, on the working tree, to see how risky a change is before opening a pull request. Not for who should review it. The history is the repository's, read on GitHub.
 argument-hint: "[#PR [days]] | [--days N]  (no PR number: your working tree)"
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__change_risk", "mcp__cloudaeye__change_risk", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## Queued Result
@@ -48,57 +48,65 @@ which needs a pull request), and **nothing can be posted**.
 
 #### Pull request
 
-1. Run exactly this one command, alone in its Bash call (that is what lets it run
-   without asking the user for permission):
+1. Find the repository with this one read-only command (This skill runs no script, so Claude
+   Code asks before the first run of a command it has not been allowed):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --pr
+   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
    ```
 
-   Its first line is JSON. Call `start_session` with every field of that line, unchanged, **and `pr_number`** (the digits, any `#` stripped), and keep the answer as `SESSION`.
+   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
+   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with
+   a GitHub, GitLab or Bitbucket remote. Call `start_session` with `repo_url` = `ORIGIN`,
+   `provider` (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab
+   host), `branch` = `BRANCH` and `head` = `HEAD`, **and `pr_number`** (the digits, any `#` stripped), and keep the answer as `SESSION`.
    The server fetches the pull request and its diff itself; there is nothing to
    upload. `SESSION.gate` is `repository`: the repository is not connected yet;
-   run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it. Any other
+   read `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it. Any other
    `status: error`: report the `error` and stop — an ineligible pull request
    (closed, from a fork, over 50 files, not into the integrated branch) is an
    answer, not something to work around.
 
 #### Working tree
 
-1. Run exactly this one command, alone in its Bash call:
+1. Find the repository with this one read-only command (This skill runs no script, so Claude
+   Code asks before the first run of a command it has not been allowed):
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --author
+   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
    ```
 
-   Its first line is JSON. Call `start_session` with every field of that line, unchanged, and keep the answer as `SESSION`. `AUTHOR` is what the `author=` line carries — your
-   GitHub username, so the author rows are about you. Empty means leave it out:
-   the server finds it from your sign-in when it can, and when it cannot, the
-   author rows are reported as not measured.
+   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
+   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with
+   a GitHub, GitLab or Bitbucket remote. Call `start_session` with `repo_url` = `ORIGIN`,
+   `provider` (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab
+   host), `branch` = `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`.
+   The author rows are about you: the server finds your GitHub account from your
+   CloudAEye sign-in, and when it cannot, it reports the author rows as not measured.
 
-   - `SESSION.gate` is `repository`: the repository is not connected yet. Run
-     `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+   - `SESSION.gate` is `repository`: the repository is not connected yet. Read
+     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to
      authenticate CloudAEye through `/mcp`.
-   - `SESSION.upload_needed` is `false`: the server already has this exact
-     change. Skip the upload.
-   - Otherwise upload the change: exactly this one command, alone in its Bash
-     call, with `SESSION` as JSON inside single quotes.
 
-     ```bash
-     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
-     ```
+   Upload the change with this one command, writing in `<TARGET>`
+   (`SESSION.target_branch`), `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes
+   only under `.cloudaeye/` (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
+   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When
+   `SESSION.target_branch` is empty, or the command stops at a `git` error before `curl` runs, read
+   `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md` instead.
 
-   Read the summary lines, the upload's when it ran and the first command's
-   when it was skipped. `cloudaeye_error=…` or `upload_http` not `200`: report it
-   and stop. `diff_bytes=0`: nothing to assess — say so and stop.
-   `base_source=head`: the diff holds only uncommitted edits, so say the history
-   was compared against your local HEAD.
+   ```bash
+   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
+   ```
+
+   It prints the upload's settings file, then the server's answer as JSON. `curl: (22)` and an error:
+   report it and stop. `diff_files` is `0`: nothing to assess — say so and stop. Never
+   print the upload token.
 
 #### Both
 
-2. Call `change_risk` with `session_id`, `days` when the user gave one, and on
-   the working tree `author: AUTHOR` (omit it when empty). Follow **Queued
+2. Call `change_risk` with `session_id` and `days` when the user gave one. Follow **Queued
    Result** above, then read `result`. One argument writes:
 
    - `post`: on a **pull request**, always `true` — the card goes on the pull
@@ -127,10 +135,10 @@ which needs a pull request), and **nothing can be posted**.
    to print the whole card here, then stop.
 
    **On the working tree** (`subject: "change"`): first save the fuller card, with its tables
-   (exactly this one command, alone in its Bash call):
+   with this one command:
 
    ```bash
-   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report risk-score '<result.report as JSON>'
+   mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/risk-score.md && echo 'report_path=.cloudaeye/reports/risk-score.md'
    ```
 
    Then your final message is **`result.card` verbatim and whole**, ending with
@@ -162,7 +170,7 @@ which needs a pull request), and **nothing can be posted**.
    | `census.bugs.unmapped` | Bugs in the window not yet mapped to the code. They are left out of the score — a gap, never a clean history. |
    | `posted.status` | Only `ok` confirms the card is on the pull request. `unavailable` or `failed` means it is not; `unknown` means delivery was not confirmed and will not be repeated automatically. Say so and why. Never write "posted" without reading this. |
    | `pr_url` | **End with a link** — `[<repo>#<pr_number>](<pr_url>)`. Absent on the working tree: give no link and never construct one. |
-   | `subject` | `change` on the working tree: the card speaks of "this change", coverage is a stated gap, and the author is you. When the author rows say *the author's GitHub login is not known*, suggest signing in to the GitHub CLI (`gh auth login`) so the next run can find it. |
+   | `subject` | `change` on the working tree: the card speaks of "this change", coverage is a stated gap, and the author is you. When the author rows say *the author's GitHub login is not known*, say CloudAEye could not match your sign-in to a GitHub account, and that linking GitHub to your CloudAEye account fixes it. |
 
 ## Notes
 

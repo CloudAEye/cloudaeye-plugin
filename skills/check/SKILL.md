@@ -3,7 +3,7 @@ name: check
 description: Run CloudAEye's checklist against an open pull request of this repository, given its number (#405) — docstring coverage, unit-test coverage, README freshness, dependency manifests, PR title and description quality, duplicate code, and a secret scan. Reports what each check found and posts the full report on the pull request; it never edits code on its own.
 when_to_use: "Use before merging a pull request, or when the user asks whether a PR is ready, well-documented, tested, or described properly (\"/cloudaeye:check #405\"). This is the hygiene pass — for bugs and security use /cloudaeye:inspect, /cloudaeye:security or /cloudaeye:review. Replaces /cloudaeye:check-pr."
 argument-hint: "<#PR number, e.g. #405>"
-allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__check_pr", "mcp__cloudaeye__check_pr"]
+allowed-tools: Read, Grep, Glob, LS
 ---
 
 ## What this is, and what it is not
@@ -39,23 +39,25 @@ nothing. That is a configuration answer, not a clean bill of health — see step
 
 ### Repository initialization gate
 
-Run this first: exactly the one command shown, alone in its Bash call (that is
-what lets it run without asking the user for permission).
+Find the repository with this one read-only command. This skill runs no script, so Claude Code
+asks before the first run of a command it has not been allowed:
 
 ```bash
-sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
+git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
 ```
 
-It prints `provider`, `repo_url`, `branch` and `head`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
-`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
+It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `repo_url` = `ORIGIN`, `provider`
+(`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host) and an empty
+`monitor_branch`, and keep its response as `INIT`.
 
 - `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
   here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): run
-  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
+- Anything else (`branch_required`, `setup_required`, an error): read
+  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
 
-Any `cloudaeye_error=…` line from a command: report it and stop.
+An error from the command (not a Git repository, no `origin` remote): say CloudAEye needs a Git
+repository with a GitHub, GitLab or Bitbucket remote, and stop.
 
 Do not go on until this gate reports `ready` or `initialized`.
 
