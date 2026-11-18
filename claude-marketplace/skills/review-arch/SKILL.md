@@ -47,12 +47,10 @@ the user for a GitHub credential.
 git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
 ```
 
-It prints the upload's settings file, then the server's answer as JSON. An upload error
-(`(22)` and a message): the change never reached the server. Stop.
+It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
 
-| what came back | what to do |
-|---|---|
-| `diff_files` is `0` | Nothing pending. Say "nothing to review" and stop. |
+- An upload error (`(22)` and a message): the change never reached the server. Stop.
+- `diff_files` is `0`: nothing pending. Say "nothing to review" and stop.
 
 ## 3. Run the review
 

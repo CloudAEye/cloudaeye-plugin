@@ -137,17 +137,21 @@ def test_the_help_lists_exactly_the_commands_this_edition_has():
 
 def test_nothing_reads_as_curl_piped_into_a_program():
     """The portal warns `RUNTIME_FETCH_EXEC` ("download-and-execute", shown to reviewers and users as an
-    install-time risk) when the word `curl` is followed by a `|` within some characters, across lines.
-    Measured on it, 18 Nov 2026: every file with a pipe 108 characters or less after a `curl` was flagged,
-    none at 199 or more; table rows naming `curl: (22)` were what set it off. This asks for 250."""
+    install-time risk) when the word `curl` is followed by a `|` within some characters, across lines: a
+    Markdown table after an upload command was enough. Validated three times on 18 Nov 2026: flagged with a
+    pipe 307 characters or less after a `curl`, never at 342 or more. And no line names curl, even as a
+    file name, before a pipe into a shell (create-owners' `| xargs … sh -c` after `upload.curl`)."""
     for path in EDITION.rglob("*"):
         if path.suffix.lower() not in {".md", ".txt", ".json", ".yaml", ".yml"}:
             continue
         text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(EDITION).as_posix()
         for found in re.finditer(r"(?:^|[\s`(])curl\b", text, re.M):
             pipe = text.find("|", found.end())
             line = text.count("\n", 0, found.end()) + 1
-            assert pipe < 0 or pipe - found.end() >= 250, f"{path.relative_to(EDITION).as_posix()}:{line}"
+            assert pipe < 0 or pipe - found.end() >= 342, f"{rel}:{line}"
+        for number, line in enumerate(text.splitlines(), 1):
+            assert not re.search(r"curl.*\|.*\b(sh|bash|zsh)\b", line), f"{rel}:{number}: curl before a shell"
 
 
 def test_both_editions_have_the_same_commands():

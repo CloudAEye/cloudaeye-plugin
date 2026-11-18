@@ -79,17 +79,16 @@ CloudAEye no longer reads the old name.
    folder instead.
 
    ```bash
-   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 sh -c 'printf "cloudaeye-file %s\n" "$1" && git blame --incremental -w -M -C HEAD -- "$1" 2>/dev/null' blame | grep -E '^(cloudaeye-file |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'blame=@-;filename=blame.txt'
+   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/blame.cfg && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 sh -c 'printf "cloudaeye-file %s\n" "$1" && git blame --incremental -w -M -C HEAD -- "$1" 2>/dev/null' blame | grep -E '^(cloudaeye-file |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | curl -sS --fail-with-body -K .cloudaeye/blame.cfg -F 'blame=@-;filename=blame.txt'
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the
-   upload token. An upload error (`(22)` and a message): the counts never reached CloudAEye. Report the error
-   and stop.
+   upload token.
 
-   | what came back | what to do with it |
-   |---|---|
-   | `blame_files` is `0` | No text file under `FOLDER` has any history to count. Say so and stop. |
-   | `blame_files` | How many files were counted. Go on. |
+   - An upload error (`(22)` and a message): the counts never reached CloudAEye. Report the
+     error and stop.
+   - `blame_files` is `0`: no text file under `FOLDER` has any history to count. Say so and stop.
+   - Any other `blame_files`: how many files were counted. Go on.
 
 5. **Work out the files.** Call `mcp__plugin_cloudaeye_cloudaeye__create_owners` with
    `session_id` = `SESSION.session_id`, `path` = `FOLDER` (empty for `.`), `depth` when one was
