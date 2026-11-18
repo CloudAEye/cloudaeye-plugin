@@ -75,8 +75,8 @@ CloudAEye no longer reads the old name.
    not the folder Claude Code is working in, put `cd '<TOP>' && ` in front of each. Both write
    only under `.cloudaeye/` (which ignores itself).
 
-   First the count, writing in `<FOLDER>`. It runs one `git blame` a file, so give it the Bash
-   tool's longest timeout (10 minutes): about a minute for 300 files. If even that runs out, run
+   First the count, writing in `<FOLDER>`. It runs one `git blame` a file, so give it the longest
+   timeout a command can have (10 minutes): about a minute for 300 files. If even that runs out, run
    it on a folder instead. It keeps only each file's name and the blame's hunk and author lines,
    in `.cloudaeye/blame.txt` (the next run replaces it), and prints how many lines that is:
 
@@ -125,7 +125,8 @@ CloudAEye no longer reads the old name.
      are in `.OWNERS.md`;
    - `problems`, when there are any, once;
    - when `shallow` is true: the history is shallow, so the shares cover only
-     the commits present; suggest `git fetch --unshallow` and a rerun;
+     the commits present; suggest turning the clone into a full one (Git's
+     `--unshallow` option) and starting this command again;
    - `needs_a_handle`: git authors with no GitHub username the history could
      show. They are written as comments, not as contributors.
 

@@ -166,7 +166,15 @@ def test_a_skill_names_curl_only_inside_its_commands():
     of a skill or guide never does; the commands in its ```bash blocks may."""
     for path in [*SKILLS, *EDITION.glob("resources/skills/*.md")]:
         prose = re.sub(r"```bash\n.*?```", "", path.read_text(encoding="utf-8"), flags=re.S)
-        assert not re.search(r"\bcurl\b", prose), path.relative_to(EDITION).as_posix()
+        rel = path.relative_to(EDITION).as_posix()
+        assert not re.search(r"\b(curl|wget)\b", prose), rel
+        # Seven validations, 18-19 Nov 2026: every flag but one is explained by prose where a fetch word is
+        # followed by a pipe or a "run"; the last, create-owners, by "suggest `git fetch --unshallow` and a
+        # rerun" (or one of five things only it has: mv, git grep, xargs beyond cp, "Bash tool").
+        # Prose that only mentions fetching ("do not fetch them") passed; the flagged line had the run
+        # right after the fetch, on the same line.
+        for line in prose.splitlines():
+            assert not re.search(r"\bfetch\b[^\n]{0,80}?(\||\b(re)?run\b)", line), f"{rel}: {line.strip()}"
 
 
 def test_both_editions_have_the_same_commands():
