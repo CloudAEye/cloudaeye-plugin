@@ -185,8 +185,11 @@ Write it as the skill's **4. The report** says, with these differences:
     of them, in order — as `name` (`login`) — `role`, taken from `candidates`, never
     @-mentioned (a mention notifies them). When fewer were found than asked for,
     say how many were. Add
-    one line: *a suggestion — no review has been requested;
-    `/cloudaeye:assign-reviewer #<n>` asks for them when you want it.* Then,
+    one line: *suggested by this run, which requests no review;
+    `/cloudaeye:assign-reviewer #<n>` asks for them when you want it.* When step
+    12's `summary` says a review is already requested on GitHub, say who was asked
+    instead of that line: this run cannot see GitHub's requests, and the
+    pull-request comment names them. Then,
     right under it in the Summary, a small collapsible
     `<details><summary>How they were suggested (/cloudaeye:assign-reviewer)</summary>`
     holding step 11's `card` verbatim in a ```text fence: who, why, their review
