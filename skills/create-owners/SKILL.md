@@ -83,11 +83,11 @@ CloudAEye no longer reads the old name.
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the
-   upload token.
+   upload token. `curl: (22)` and an error: the counts never reached CloudAEye. Report the error
+   and stop.
 
    | what came back | what to do with it |
    |---|---|
-   | `curl: (22)` and an error | The counts never reached CloudAEye. Report the error and stop. |
    | `blame_files` is `0` | No text file under `FOLDER` has any history to count. Say so and stop. |
    | `blame_files` | How many files were counted. Go on. |
 

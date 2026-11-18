@@ -147,11 +147,11 @@ or set it later with `/plugin configure cloudaeye@cloudaeye`, then start a new s
 |---|---|
 | CloudAEye shows **Needs authentication** | Open `/mcp` and choose **Authenticate** |
 | A command or its tool is missing | Update the plugin, then start a new session — see [Update](#update) |
-| `curl: (22)` with `invalid upload token` | The upload grant belongs to another session: run the command again |
-| `curl: (6)` or `(7)` | Check network access |
+| The upload fails with error 22 and `invalid upload token` | The upload grant belongs to another session: run the command again |
+| The upload fails with error 6 or 7 | Check network access |
 | The review says it used your last commit as its baseline | Connect the repository (`/cloudaeye:init`) so its integrated branch is used, and make sure `origin/<that branch>` exists in your clone |
 | `error: unknown option 'merge-base'` | Update Git to 2.30 or newer |
-| A command asks to approve a `git` or `curl` step | Expected: the commands run plain `git` and `curl` steps that Claude Code shows you first. Approve it, or choose to stop being asked |
+| A command asks to approve a `git` step or an upload | Expected: the commands run plain `git` steps and uploads that Claude Code shows you first. Approve it, or choose to stop being asked |
 
 ## Privacy
 

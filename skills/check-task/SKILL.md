@@ -73,10 +73,10 @@ With no argument, fall back to asking the user (step 2).
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
+   `curl: (22)` and an error: the diff never reached the server. Stop; otherwise a stale result can look clean.
 
    | what came back | what to do with it |
    |---|---|
-   | `curl: (22)` and an error | The diff never reached the server. Stop; otherwise a stale result can look clean. |
    | `diff_files` is `0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
    | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 

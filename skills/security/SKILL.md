@@ -89,10 +89,10 @@ arguments call for, in one turn, before step 1.
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
+   `curl: (22)` and an error: the diff never reached the server. Stop; otherwise a stale result can look clean.
 
    | what came back | what to do with it |
    |---|---|
-   | `curl: (22)` and an error | The diff never reached the server. Stop; otherwise a stale result can look clean. |
    | `diff_files` is `0` | Nothing pending — report "nothing to review" and stop. |
    | `settings` | The team's settings that apply to this change (`SETTINGS`). Read `${CLAUDE_PLUGIN_ROOT}/resources/skills/review-settings.md` and follow it. With no `settings`, none apply and nothing changes. |
    | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |

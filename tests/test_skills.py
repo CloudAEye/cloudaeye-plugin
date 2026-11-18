@@ -110,6 +110,16 @@ def test_no_command_carries_what_keeps_claude_code_asking():
                 f"{rel}: curl's own arguments change from run to run"
 
 
+def test_no_line_reads_as_curl_piped_into_a_program():
+    """Anthropic's directory scan warns `RUNTIME_FETCH_EXEC` ("download-and-execute") on a skill or README
+    with a line where the word `curl` is followed by a `|`: it reads `curl … | program` as code fetched and
+    run at once (18 Nov 2026). A Markdown table row naming `curl: (22)` was enough, in twelve skills and the
+    README; the commands themselves pass, because `curl` ends their line, and `upload.curl` is a file name."""
+    for path in [*SKILLS, *GUIDES, ROOT / "README.md"]:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            assert not re.search(r"(?:^|[\s`(])curl\b[^\n]*\|", line), f"{path.relative_to(ROOT).as_posix()}:{number}"
+
+
 def test_the_help_lists_exactly_the_commands_this_plugin_has():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     table = readme.split("## Commands", 1)[1].split("\n\n", 2)[1]
