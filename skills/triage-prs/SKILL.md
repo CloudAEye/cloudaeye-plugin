@@ -3,7 +3,7 @@ name: triage-prs
 description: Pick the pull request you should review next, across every repository your team connected to CloudAEye, and say why. Each PR waiting on you gets a priority out of 100 from its tickets' urgency, what the changed code does and the OKRs it serves, its risk, and how much else depends on it; PRs whose next move is the author's are listed apart. A note in your own words ("I have half an hour", "skip the UI repo") steers the pick. With nothing requested from you, it lists the PRs nobody was asked to review. Reads only; writes nothing on GitHub or Jira.
 when_to_use: Use when the user asks what to review next, which PR to look at, what is waiting on them, to prioritise or triage pull requests, or (with repo or all) for a team's whole PR queue. Not for whether one PR is risky (/cloudaeye:risk-score) or who should review one (/cloudaeye:assign-reviewer).
 argument-hint: "[here | repo | all] [a note: 'I have half an hour'] [okrs:<file or URL>] [for:@login]"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__triage_prs", "mcp__cloudaeye__triage_prs", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository"]
 ---
 
 ## Direct Result
@@ -33,24 +33,27 @@ Never interpret the note yourself; the server applies it.
 
 ### 2. Find the user's GitHub username (for `mine` and `here`)
 
-Leave `REVIEWER` out: the server finds it from the user's CloudAEye sign-in when it
-can. Never look the login up yourself (no `gh` or `git` call); if the server still
-needs it, it answers `login_needed` and you ask.
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae login
+```
+
+`REVIEWER` is what it prints after `author=`. Empty means leave it out: the
+server finds it from the user's sign-in when it can. That command already tried
+the GitHub CLI and the git address: never look the login up any other way (no `gh`
+or `git` call of your own, which would ask the user to approve it); if the server
+still needs it, it answers `login_needed` and you ask.
 
 ### 3. Your settings
 
-When you are in a git repository, find its top-level folder with this one read-only
-command (This skill runs no script, so Claude Code asks before the first run of a
-command it has not been allowed):
+When you are in a git repository, read the OKRs setting in its top-level
+`.cloudaeye.config` (`/cloudaeye:config` writes it), in one Bash call:
 
 ```bash
-git rev-parse --show-toplevel && git remote get-url origin
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae config effective
 ```
 
-The lines are `TOP` and `ORIGIN`. Read `TOP/.cloudaeye.config` if there is one
-(a file your team commits): the `- OKRs:` line under `## Triage PRs` is
-`triage.okrs`, used when the user named no `okrs:`. A line inside `<!--` and `-->` is
-commented out and does not count. No file, or no such line, means there is none.
+`triage.okrs` in the answer is used when the user named no `okrs:`. An `error`, or no
+`triage`, means there is none.
 
 ### 4. Read the OKR document, when one was named
 
@@ -61,17 +64,22 @@ a preview for this run and is never stored; without it the team's saved OKRs are
 
 ### 5. Connect this repository, for `here` and `repo` only
 
-These two need the current repository. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `repo_url` = `ORIGIN` from step 3,
-`provider` (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host)
-and an empty `monitor_branch`, and keep its response as `INIT`.
+These two need the current repository. Run the bundled preflight helper and the
+session-free initialization tool, as every operational CloudAEye command does:
+
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
+```
+
+Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with the detected
+`provider`, `repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 Use `INIT.repo_full` as `repo`. If it does not answer `ready` or `initialized`, say the
 repository is not connected and suggest `/cloudaeye:init`; stop. `mine` and `all` skip
 this step: they read every repository the team connected.
 
 ### 6. Call `triage_prs`
 
-Pass `reviewer` only when the user told you their username after a `login_needed`, `scope` (`mine`, `here`, `repo` or `all`), `repo` for `here`
+Pass `reviewer=REVIEWER`, `scope` (`mine`, `here`, `repo` or `all`), `repo` for `here`
 and `repo`, `note=NOTE`, `okrs=OKRS`, and `for_login` (no `@`) when the user asked for
 someone else's queue.
 

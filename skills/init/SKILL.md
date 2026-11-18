@@ -2,32 +2,27 @@
 name: init
 description: Connect the current Git repository to CloudAEye using its detected GitHub, GitLab, or Bitbucket remote.
 when_to_use: Use when the user runs /cloudaeye:init or asks to connect this repository to CloudAEye.
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository"]
 ---
 
 ## Steps
 
-1. Find the repository with this one read-only command. This skill runs no script, so Claude
-   Code asks before the first run of a command it has not been allowed:
+1. Run the bundled repository preflight helper from the repository root:
 
    ```bash
-   git remote get-url origin && git symbolic-ref --short refs/remotes/origin/HEAD
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
    ```
 
-   The first line is `ORIGIN`, the remote's URL. The second, when there is one, is the remote's
-   default branch as `origin/<name>`: `<name>` is `BASE_BRANCH`. An error on the first (not a Git
-   repository, no `origin` remote): say CloudAEye needs a Git repository with a GitHub, GitLab or
-   Bitbucket remote, and stop. `provider` is `github` for github.com, `bitbucket` for
-   bitbucket.org and `gitlab` for a GitLab host; `repo_url` is `ORIGIN` as printed. Never guess
-   between remotes, providers, or branches.
+   It returns `provider`, `repo_url`, `repo_full`, `base_branch`, and `branch_required`.
+   Never guess between remotes, providers, or branches.
 
 2. Call `mcp__plugin_cloudaeye_cloudaeye__initialize_repository` once with the
    detected `provider`, `repo_url`, and an empty `monitor_branch`. If it returns
    `branch_required`, ask `Branch to monitor [base_branch]:`; Enter keeps the
-   displayed base branch. Set `MONITOR_BRANCH` to that answer (or the displayed
-   base branch, `BASE_BRANCH`); if there is none, require a non-empty answer that
-   is one branch name (no spaces, no `..`, not starting with `-`). Retry
-   initialization with `monitor_branch=MONITOR_BRANCH`. Once a
+   displayed base branch. Set `BRANCH` to that answer (or the displayed base
+   branch); if there is no base branch, require a non-empty answer. Rerun the
+   helper with `--branch "$BRANCH"`, set `MONITOR_BRANCH` from that
+   result, and retry initialization with `monitor_branch=MONITOR_BRANCH`. Once a
    `CONNECTION` is chosen (step 3), pass `connection=CONNECTION` on every later call.
 
 3. Use the initialization result (or the retry result) from
@@ -45,13 +40,17 @@ allowed-tools: Read, Grep, Glob, LS
      `CONNECTION` to the chosen entry's `id` (never its `name`) and retry once with
      the same `provider`, `repo_url` and `monitor_branch` plus `connection=CONNECTION`.
      If it answers `connection_required` again, report its `reason` and stop.
-   - `setup_required`: give the user `integration_url` as a link to open (only
-     an `https://` address), tell them to finish connecting in the browser, then poll every 10 seconds for at most 30 attempts. Each poll
+   - `setup_required`: validate and open `integration_url` using the native browser
+     command below, then poll every 10 seconds for at most 30 attempts. Each poll
      must call initialization with the original `provider` and `repo_url`, the
      same `monitor_branch=MONITOR_BRANCH` and, once chosen, the same
      `connection=CONNECTION`; replace `INIT` with each response. Continue
      only after `INIT.status` is `ready` or `initialized`; stop on errors, conflicts,
      or timeout. Never treat `provider_connected` alone as success.
    - `error` or `integration_conflict`: report the error and stop.
+
+   ```bash
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae open '<integration_url from the tool>'
+   ```
 
 Never call `start_session`, upload a diff, or handle credentials in `/cloudaeye:init`.

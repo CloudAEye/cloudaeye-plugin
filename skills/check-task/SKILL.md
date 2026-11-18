@@ -3,7 +3,7 @@ name: check-task
 description: Check whether the uncommitted changes in this repo actually do what the task asked. Takes a GitHub issue URL, Jira ticket IDs, a mixed reference list, or freeform task text, and returns a DONE / NOT DONE verdict with a per-requirement checklist and the gaps.
 when_to_use: Use before marking work complete, or when the user asks whether the change satisfies an issue, a ticket, or the request they made. Accepts an issue URL, IDs like PROJ-123, a list of both, or plain text.
 argument-hint: "[issue URL | TICKET-123 | task description]"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__check_task", "mcp__cloudaeye__check_task", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
@@ -41,48 +41,35 @@ With no argument, fall back to asking the user (step 2).
 
 1. Set up the session.
 
-   Find the repository with this one read-only command. This skill runs no script, so Claude Code
-   asks before the first run of a command it has not been allowed:
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
-   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
-   GitHub, GitLab or Bitbucket remote.
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
 
-   Then call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `repo_url` = `ORIGIN`, `provider`
-   (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host), `branch` =
-   `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`; its `session_id` is the one every
-   later call takes.
-
-   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
-     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
 
-   Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_branch`),
-   `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes only under `.cloudaeye/`
-   (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
-   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
-   empty, or the command stops at a `git` error before the upload runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
-   instead.
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
 
-   ```bash
-   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
-   ```
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
-   It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
-   An upload error (`(22)` and a message): the diff never reached the server. Stop; otherwise a stale result can look clean.
-
-   | what came back | what to do with it |
+   | output | what to do with it |
    |---|---|
-   | `diff_files` is `0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
-   | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
+   | `diff_bytes=0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
+   | `prior_task` | Offer it for reuse in step 2; never reuse it silently. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
-   about it is the one failure mode that misleads.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Establish the task to verify against. This is the one input the user must supply:
    - **If an invocation argument was given** (see Arguments above), use it — skip the prompt.
    - **Else if step 1 printed a non-empty `prior_task`** (a `check_task` ran against this review session before, no commit since), offer to reuse it: show `prior_task.task_description` (truncated) and ask "verify against this same task again, or a new one?" Don't silently reuse — confirm first.
@@ -92,7 +79,7 @@ With no argument, fall back to asking the user (step 2).
      - **freeform task text** (a spec excerpt or plain description) → pass it verbatim as `task_description` and set `task_source` to `spec` or `user-text`.
    - Do not summarise or paraphrase the task. The server extracts requirements from the exact text.
 3. Write a one-paragraph `intent` describing **the code change you just made in this round of edits** — used by the verifier as a focus signal (it still verifies every claim against the actual diff).
-   - **Do not read the diff to write this.** No `cat .cloudaeye/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
+   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
    - **First check on a review session:** describe what you implemented and why.
    - **Re-check after the user asked you to close gaps:** reference the prior gaps by number and explain how each was addressed, or why it was intentionally left. Don't restate the original task — the verifier already has it via `task_description`.
 4. Call CloudAEye's `check_task` MCP tool with:
@@ -102,7 +89,7 @@ With no argument, fall back to asking the user (step 2).
    - `intent`: the summary from step 3
    - `context`: optional — only for `pr_title` / `pr_description`. Identity fields are already on the review session.
 
-   Call `mcp__plugin_cloudaeye_cloudaeye__check_task`; it is Claude Code asks before its first use.
+   Call `mcp__plugin_cloudaeye_cloudaeye__check_task`; it is pre-approved in this skill's frontmatter.
 
    You do **not** need to read the changed source files yourself before calling — the server has the post-edit file contents staged and examines them via its own tooling.
 5. Print the `report` field from the response verbatim. It is rendered markdown — a `# Task Completion Check` heading, a status line, a progress bar over met requirements, a per-requirement table (✅ done / ⚠️ partial / ❌ not done), gaps, and any out-of-scope changes. Don't re-summarise or re-format it; the counts and the bar are computed server-side and re-typing them is how they drift.

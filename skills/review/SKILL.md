@@ -3,7 +3,7 @@ name: review
 description: Full CloudAEye review — bugs and security in one pass — of the uncommitted changes in this repo, of just one file or directory of them, or of an open pull request given its number. Reports findings with file, line and severity, grouped by kind; it never edits code on its own. The widest and most expensive of the CloudAEye passes.
 when_to_use: "Use before opening a significant PR, when the user asks for a full, complete or thorough review, when they name a path to review (\"/cloudaeye:review src/auth/\"), or when they name a pull request (\"/cloudaeye:review #405\", \"review PR 12\"). For the routine check after finishing a task use /cloudaeye:inspect; for the security surface alone use /cloudaeye:security."
 argument-hint: "[path | #PR] [--critical] [--model MODEL] [--model-provider PROVIDER] [--invert-model true|false]"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository","mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__inspect_diff", "mcp__cloudaeye__inspect_diff", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
@@ -36,70 +36,54 @@ The user invoked `/cloudaeye:review`, or asked for a full, complete or thorough 
 | Argument | What to do |
 |---|---|
 | *none* | The working tree: every uncommitted change. Go straight to **Steps**. |
-| `#405`, or bare digits like `405` | A pull request. First read `${CLAUDE_PLUGIN_ROOT}/resources/skills/pull-request-run.md`, and follow it where it differs from the steps. |
-| a path: `src/auth/login.ts`, `src/auth/` | Only the changes under it. First read `${CLAUDE_PLUGIN_ROOT}/resources/skills/scoped-run.md`. |
-| `--critical` `--high` `--medium` `--low`, `--model`, `--model-provider`, `--invert-model` | First read `${CLAUDE_PLUGIN_ROOT}/resources/skills/review-flags.md`. These combine with any row above. |
+| `#405`, or bare digits like `405` | A pull request. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide pull-request-run`, and follow it where it differs from the steps. |
+| a path: `src/auth/login.ts`, `src/auth/` | Only the changes under it. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide scoped-run`. |
+| `--critical` `--high` `--medium` `--low`, `--model`, `--model-provider`, `--invert-model` | First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide review-flags`. These combine with any row above. |
 
-Digits mean a pull request; a directory named `405` is written `./405`. Read the guides the
-arguments call for, in one turn, before step 1.
+Digits mean a pull request; a directory named `405` is written `./405`. Each guide is that one
+command, alone in its Bash call; run the ones the arguments call for before step 1.
 
 ## Steps
 
 1. Set up the session.
 
-   Find the repository with this one read-only command. This skill runs no script, so Claude Code
-   asks before the first run of a command it has not been allowed:
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start --review --guide review-settings
    ```
 
-   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
-   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
-   GitHub, GitLab or Bitbucket remote.
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
 
-   Then call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `repo_url` = `ORIGIN`, `provider`
-   (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host), `branch` =
-   `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`; its `session_id` is the one every
-   later call takes. In the same turn, Glob `**/.cloudaeye.config` and `**/.cloudaeye.rules` with `TOP` as
-   the path: they are `SETTINGS_FILES`, each a path relative to `TOP`.
-
-   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
-     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
 
-   Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_branch`),
-   `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`, and one `-F 'settings_file=@<path>;filename=<path>'` for each of
-   `SETTINGS_FILES`, at the end. It writes only under `.cloudaeye/`
-   (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
-   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
-   empty, or the command stops at a `git` error before the upload runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
-   instead.
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>' --review --guide review-settings
+     ```
 
-   ```bash
-   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff' -F 'settings=review'
-   ```
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
-   It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
-   An upload error (`(22)` and a message): the diff never reached the server. Stop; otherwise a stale result can look clean.
-
-   | what came back | what to do with it |
+   | output | what to do with it |
    |---|---|
-   | `diff_files` is `0` | Nothing pending — report "nothing to review" and stop. |
-   | `settings` | The team's settings that apply to this change (`SETTINGS`). Read `${CLAUDE_PLUGIN_ROOT}/resources/skills/review-settings.md` and follow it. With no `settings`, none apply and nothing changes. |
-   | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
+   | `diff_bytes=0` | Nothing pending — report "nothing to review" and stop. |
+   | `settings:` | The team's settings as JSON (`SETTINGS`). When any apply to this change, `settings-guide:` follows them and says what to pass; with none, nothing follows and nothing changes. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
-   about it is the one failure mode that misleads.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 
 2. Write a one-paragraph intent summary.
 
-   **The same change as last time** (the upload answered `diff_unchanged: true`): **write no intent and pass none.** The session keeps the one this change was reviewed with, so the server answers from what it stored, in seconds and at no cost; a new paragraph, however close, reads as a new instruction and runs the whole review again. The one exception: the user asked you to leave a flagged finding alone, or to look at something else this time — then write a new intent that says so.
+   **The same change as last time** (`SESSION.upload_needed` is `false`, or the upload printed `diff_unchanged=true`): **write no intent and pass none.** The session keeps the one this change was reviewed with, so the server answers from what it stored, in seconds and at no cost; a new paragraph, however close, reads as a new instruction and runs the whole review again. The one exception: the user asked you to leave a flagged finding alone, or to look at something else this time — then write a new intent that says so.
 
    **Otherwise** describe **the code change you just made in this round of edits** — what you implemented and why, plus any security-relevant surface it touches (untrusted input, auth, secrets, serialization, prompts, tool definitions). Not a re-statement of the original ask. The planner uses this verbatim to prioritise within the full category set, and it is the **only** channel for telling the reviewer to leave a previously-flagged issue alone — so if you are asking it to skip something, say which finding and why, in words the user can see.
-   - **Do not read the diff to write this.** No `cat .cloudaeye/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context, and the server is what analyses the diff. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and take the file list from the upload's `changed_files` — never run a git command for it, and never read the diff.
-3. Call CloudAEye's `inspect_diff` MCP tool (`mcp__plugin_cloudaeye_cloudaeye__inspect_diff`, Claude Code asks before its first use) with:
+   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context, and the server is what analyses the diff. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and take the file list from the `changed_files=` line — never run a git command for it, and never read the diff.
+3. Call CloudAEye's `inspect_diff` MCP tool (`mcp__plugin_cloudaeye_cloudaeye__inspect_diff`, pre-approved in this skill's frontmatter) with:
    - `session_id`: `SESSION.session_id`
    - `intent`: the summary from step 2; left out altogether for the same change as last time
    - `profile`: `"review"` — **always this value from this skill.** It selects every valid prompt: the bug categories and the full security surface.

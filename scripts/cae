@@ -1,0 +1,21 @@
+#!/bin/sh
+# CloudAEye's one helper command: find a working Python 3 and run cloudaeye_cli.py with it.
+#
+# The skills call this and nothing else from a shell, as one plain command, so each skill can
+# pre-approve it (`allowed-tools: Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)`) and the developer
+# is never asked to approve a shell step. A loop, a `VAR=value` prefix or a second command in the
+# same call would each bring the prompt back.
+#
+# Every candidate is probed with `-c ""`: on Windows `python3` is often the Microsoft Store stub,
+# which exists and fails. PYTHONUTF8 is set first: Windows Python otherwise prints cp1252.
+PYTHONUTF8=1
+export PYTHONUTF8
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if command -v cygpath >/dev/null 2>&1; then dir=$(cygpath -m "$dir"); fi
+for c in python python3 py; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c "" 2>/dev/null; then
+    exec "$c" "$dir/cloudaeye_cli.py" "$@"
+  fi
+done
+echo "cloudaeye_error=python_not_found"
+exit 1

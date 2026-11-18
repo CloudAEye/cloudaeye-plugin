@@ -3,7 +3,7 @@ name: slop-score
 description: Score the uncommitted changes in this repo — or one path of them, or an open pull request — for AI-slop signals, and report how much review the change needs, with the evidence behind it. Nine weighted signals — duplicate code, hallucinated APIs, dead code, missing tests, complexity, generic naming, boilerplate comments, overengineering, style inconsistency — plus the shape of the change. Reports a score out of 100, its review band and a card; it never edits code.
 when_to_use: Use when the user asks how much slop is in a change, whether it looks AI-generated, whether it needs a careful manual read before merge, or asks for a slop score. Also useful on a large change whose per-file review came back clean but whose size does not look earned.
 argument-hint: "[optional: a path, or a PR number like #5]"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__start_session", "mcp__cloudaeye__start_session", "mcp__plugin_cloudaeye_cloudaeye__slop_score", "mcp__cloudaeye__slop_score", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Queued Result
@@ -48,11 +48,11 @@ Reported beside the score and contributing no points: the volume of the change, 
 | Argument | What to do |
 |---|---|
 | *none* | The working tree: every uncommitted change. Go straight to **Steps**. |
-| `#405`, or bare digits like `405` | A pull request. First read `${CLAUDE_PLUGIN_ROOT}/resources/skills/pull-request-run.md`, and follow it where it differs from the steps. |
-| anything else: `src/auth/login.ts`, `src/auth/` | Only the changes under that path. First read `${CLAUDE_PLUGIN_ROOT}/resources/skills/scoped-run.md`. |
+| `#405`, or bare digits like `405` | A pull request. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide pull-request-run`, and follow it where it differs from the steps. |
+| anything else: `src/auth/login.ts`, `src/auth/` | Only the changes under that path. First run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide scoped-run`. |
 
-Digits mean a pull request; a directory named `405` is written `./405`. Read the guides the
-arguments call for, in one turn, before step 1.
+Digits mean a pull request; a directory named `405` is written `./405`. Each guide is that one
+command, alone in its Bash call.
 
 There is deliberately **no severity flag.** A floor drops findings before they are counted, so every numerator would shrink while the denominators stayed put — the score would fall because less was reported rather than because less was wrong. The server refuses one for the same reason.
 
@@ -60,55 +60,41 @@ There is deliberately **no severity flag.** A floor drops findings before they a
 
 1. Set up the session.
 
-   Find the repository with this one read-only command. This skill runs no script, so Claude Code
-   asks before the first run of a command it has not been allowed:
+   Run exactly this one command, alone in its Bash call (that is what lets it run without asking the user for permission):
 
    ```bash
-   git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae start
    ```
 
-   It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. An error
-   (not a Git repository, no `origin` remote): stop and say CloudAEye needs a Git repository with a
-   GitHub, GitLab or Bitbucket remote.
+   Its first line is JSON. Call `mcp__plugin_cloudaeye_cloudaeye__start_session` with every field of that line, unchanged, and keep the answer as `SESSION`; its `session_id` is the one every later call takes.
 
-   Then call `mcp__plugin_cloudaeye_cloudaeye__start_session` with `repo_url` = `ORIGIN`, `provider`
-   (`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host), `branch` =
-   `BRANCH` and `head` = `HEAD`, and keep the answer as `SESSION`; its `session_id` is the one every
-   later call takes.
-
-   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Read
-     `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+   - `SESSION.gate` is `repository`: the repository is not connected to CloudAEye yet. Run `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
    - The tool is unavailable, or `status` is `error`: stop and tell the user to authenticate CloudAEye through `/mcp`.
+   - `SESSION.upload_needed` is `false`: the server already has this exact change. Skip the upload.
+   - Otherwise upload the change: exactly this one command, alone in its Bash call, with `SESSION` as JSON inside single quotes. The script checks the values itself and never prints a token.
 
-   Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_branch`),
-   `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes only under `.cloudaeye/`
-   (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
-   the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
-   empty, or the command stops at a `git` error before the upload runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
-   instead.
+     ```bash
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae upload '<SESSION as JSON>'
+     ```
 
-   ```bash
-   git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/upload.curl && git rev-parse --git-path index | xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N . && git diff --merge-base 'origin/<TARGET>' --output=.cloudaeye/session.diff -- . && git merge-base HEAD 'origin/<TARGET>' | curl -sS --fail-with-body -K .cloudaeye/upload.curl -F 'base_sha=<-' -F 'file=@.cloudaeye/session.diff'
-   ```
+   Read the summary lines — the upload's when it ran, the first command's when it was skipped — and don't re-derive them:
 
-   It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
-   An upload error (`(22)` and a message): the diff never reached the server. Stop; otherwise a stale result can look clean.
-
-   | what came back | what to do with it |
+   | output | what to do with it |
    |---|---|
-   | `diff_files` is `0` | Nothing pending — report "nothing to score" and stop. |
-   | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
+   | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
+   | `diff_bytes=0` | Nothing pending — report "nothing to score" and stop. |
+   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
+   | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
-   about it is the one failure mode that misleads.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
 2. Call CloudAEye's `slop_score` MCP tool **once** with:
    - `session_id`: `SESSION.session_id`
    - `context`: `{"scope_path": "<the path>"}` when the run is scoped to a path, as the scoped-run guide says. Omit it otherwise.
 
    Do not pass `run_review: false`. It scores only what is already on disk, which on a fresh session is every signal unmeasured — a correct answer and a useless one.
 
-   Call `mcp__plugin_cloudaeye_cloudaeye__slop_score`; it is Claude Code asks before its first use.
+   Call `mcp__plugin_cloudaeye_cloudaeye__slop_score`; it is pre-approved in this skill's frontmatter.
 
    The tool runs the `slop` review profile first so the signals have something to read, then does the arithmetic. Anything a previous `/cloudaeye:review` or `/cloudaeye:inspect` already computed **on this same diff** is reused rather than paid for again, so the second scoring of an unchanged change is nearly free. You do **not** need to read the changed files yourself — the server has them staged.
 
@@ -121,10 +107,10 @@ There is deliberately **no severity flag.** A floor drops findings before they a
 
    - **First: a `degraded` block.** The review underneath ran with no post-edit source staged, so every signal read an empty file. **Report it as a failed run and stop — do not present the card, and never call it a low score.** The server does not cache a degraded run, so re-running once the cause is fixed gives a real answer.
 
-   - **Save the card as a file too**, after printing it, with this one command:
+   - **Save the card as a file too**, after printing it (exactly this one command, alone in its Bash call):
 
      ```bash
-     mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/slop-score.md && echo 'report_path=.cloudaeye/reports/slop-score.md'
+     sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report slop-score '<result.report as JSON>'
      ```
 
      and end with `Saved: <report_path>`. Skip this when the result has no `report`.

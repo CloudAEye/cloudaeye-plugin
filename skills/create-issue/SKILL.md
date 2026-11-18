@@ -3,7 +3,7 @@ name: create-issue
 description: File findings from a CloudAEye review as tracking issues — a Jira ticket or a GitHub issue, with an optional assignee. Takes the finding numbers the review printed. It creates real tickets; it never edits code.
 when_to_use: Use after a CloudAEye review, when the user wants a finding tracked rather than fixed now — "raise a ticket for that", "file the second one to Jira", "create an issue for the auth bug". For fixing a finding instead, use /cloudaeye:implement.
 argument-hint: "[2] jira Jane Doe   ·   [1,3] github octocat"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["mcp__plugin_cloudaeye_cloudaeye__create_issue", "mcp__cloudaeye__create_issue", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Direct Result

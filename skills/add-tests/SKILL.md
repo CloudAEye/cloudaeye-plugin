@@ -3,7 +3,7 @@ name: add-tests
 description: Have CloudAEye write unit tests for the uncovered code in an open pull request and post them on the pull request as one-click review suggestions, new test files included. It writes on the PR; it never edits your working tree.
 when_to_use: Use when the user asks for tests for a pull request, or to fix the unit test coverage a /cloudaeye:check run reported. Needs an open pull request — there is no working-tree mode.
 argument-hint: "<PR number, e.g. 405 or #405>"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__add_tests", "mcp__cloudaeye__add_tests"]
 ---
 
 ## What this is
@@ -27,25 +27,23 @@ just to print it would be the same words three times.
 
 ### Repository initialization gate
 
-Find the repository with this one read-only command. This skill runs no script, so Claude Code
-asks before the first run of a command it has not been allowed:
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `repo_url` = `ORIGIN`, `provider`
-(`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host) and an empty
-`monitor_branch`, and keep its response as `INIT`.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
 - `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
   here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+- Anything else (`branch_required`, `setup_required`, an error): run
+  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
 
-An error from the command (not a Git repository, no `origin` remote): say CloudAEye needs a Git
-repository with a GitHub, GitLab or Bitbucket remote, and stop.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
 Do not go on until this gate reports `ready` or `initialized`.
 

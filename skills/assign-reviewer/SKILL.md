@@ -1,9 +1,9 @@
 ---
 name: assign-reviewer
-description: Suggest who should review an open pull request, say why, show their review queue, and suggest what they should check — from code ownership (.OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's queue. Takes a note in your own words after the PR number ("Tom is away", "urgent, nobody busy"). When the recommended reviewer can review in the repository, it requests their review on GitHub; otherwise it only suggests.
+description: Suggest who should review an open pull request, say why, show their review queue, and suggest what they should check — from code ownership (.OWNERS.md) at minimum, and from whoever wrote the lines it changes, reviewed these files before or fixed bugs in them, balanced against each person's queue. Takes a note in your own words after the PR number ("Tom is away", "urgent, nobody busy"). When the repository has no .OWNERS.md yet, it creates ownership at the root from git history first, in your working tree. When the recommended reviewer can review in the repository, it requests their review on GitHub; otherwise it only suggests.
 when_to_use: Use when the user asks who should review a pull request, wants a reviewer suggested or assigned, or asks to request a review. Not for whether a pull request is risky (that is /cloudaeye:risk-score).
 argument-hint: "<PR number like #412> [a note: 'Tom is away', 'urgent, nobody busy']"
-allowed-tools: Read, Grep, Glob, LS
+allowed-tools: ["Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae *)", "mcp__plugin_cloudaeye_cloudaeye__initialize_repository", "mcp__cloudaeye__initialize_repository", "mcp__plugin_cloudaeye_cloudaeye__assign_reviewer", "mcp__cloudaeye__assign_reviewer", "mcp__plugin_cloudaeye_cloudaeye__get_job_result", "mcp__cloudaeye__get_job_result"]
 ---
 
 ## Direct Result
@@ -18,25 +18,23 @@ until it completes before calling; never start one to fill a gap.
 
 ### Repository initialization gate
 
-Find the repository with this one read-only command. This skill runs no script, so Claude Code
-asks before the first run of a command it has not been allowed:
+Run this first: exactly the one command shown, alone in its Bash call (that is
+what lets it run without asking the user for permission).
 
 ```bash
-git rev-parse --show-toplevel HEAD --abbrev-ref HEAD && git remote get-url origin
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae preflight
 ```
 
-It prints four lines: `TOP` (the repository's folder), `HEAD`, `BRANCH` and `ORIGIN`. Call
-`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `repo_url` = `ORIGIN`, `provider`
-(`github` for github.com, `bitbucket` for bitbucket.org, `gitlab` for a GitLab host) and an empty
-`monitor_branch`, and keep its response as `INIT`.
+It prints `provider`, `repo_url`, `branch` and `head`. Call
+`mcp__plugin_cloudaeye_cloudaeye__initialize_repository` with `provider`,
+`repo_url` and an empty `monitor_branch`, and keep its response as `INIT`.
 
 - `ready` or `initialized`: `INIT.repo_full` is the authoritative `repo` from
   here on; do not recompute it from local Git.
-- Anything else (`branch_required`, `setup_required`, an error): read
-  `${CLAUDE_PLUGIN_ROOT}/resources/skills/connect-repository.md` and follow it.
+- Anything else (`branch_required`, `setup_required`, an error): run
+  `sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae guide connect-repository` and follow it.
 
-An error from the command (not a Git repository, no `origin` remote): say CloudAEye needs a Git
-repository with a GitHub, GitLab or Bitbucket remote, and stop.
+Any `cloudaeye_error=…` line from a command: report it and stop.
 
 Do not call the tool until this gate reports `ready` or `initialized`.
 
@@ -53,24 +51,53 @@ word for word, and pass it as `note` on every recommend call. Do not interpret i
 yourself: the ranking applies it, leaves out whoever it rules out and names them on
 the card, and puts someone with room in their queue first when it asks for speed.
 
-1. **Recommend.** First Glob `**/.OWNERS.md` with `TOP` as the path. When any
-   are found, Read them all in one turn and keep `OWNERS`: each path relative to
-   `TOP`, mapped to its text. They stand in for ownership the target branch does
-   not have yet; when it has its own, the server reads that instead.
-
-   Call `assign_reviewer` with `repo=INIT.repo_full`, `pr_number` (the digits, any
-   `#` stripped), `owners=OWNERS` when there are any, and `note=NOTE` when there is
-   one. This call writes nothing on GitHub; CloudAEye only keeps the suggestion
-   for this commit, so a `/cloudaeye:ultrareview` comment on the pull request can
-   show the same reviewers.
+1. **Recommend.** Call `assign_reviewer` with `repo=INIT.repo_full`,
+   `pr_number` (the digits, any `#` stripped), `require_owners=true`, and
+   `note=NOTE` when there is one. This call writes nothing on GitHub; CloudAEye
+   only keeps the suggestion for this commit, so a `/cloudaeye:ultrareview`
+   comment on the pull request can show the same reviewers.
    - `status: error` — report `error` and stop. An ineligible pull request
      (closed, from a fork, over 50 files, not into the integrated branch) is an
      answer, not something to work around.
-   - `status: ok` — go to step 2. With no `.OWNERS.md` anywhere, the suggestion
-     comes from who wrote the lines the change rewrites, who reviewed and fixed
-     these files before, and GitHub's own suggestions; the card says what it was
-     based on, and `/cloudaeye:create-owners` writes the files from git history.
-     Pass the same `OWNERS` again in step 4.
+   - `status: owners_missing` — the target branch has no `.OWNERS.md`. Go to
+     **Ownership first** below, then come back to step 2.
+   - `status: ok` — go to step 2.
+
+   **Ownership first** (only on `owners_missing`). Ownership lives in the
+   repository, so what one person measures reaches everyone once it is merged.
+   Until then the files in this working tree stand in for it.
+
+   a. If the repository root in this working tree already has a `.OWNERS.md`
+      (an earlier run, not merged yet), use it: skip to c.
+
+   b. Otherwise say one line — *`<target_branch>` has no .OWNERS.md, so I'm
+      creating ownership at the repository root from git history first. This
+      runs on your machine and can take a few minutes.* — and run:
+
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae owners
+```
+
+      It writes the root's `.OWNERS.md`, and one in each folder down to three
+      levels whose people differ, and renames any file still called
+      `OWNERS.md` (the name before 9 Nov 2026, which CloudAEye no longer reads)
+      to `.OWNERS.md`, Teams kept. Report the files it wrote and their lead
+      contributors in a short table. If `needs_a_handle` is not empty, name
+      those people in one line and say `/cloudaeye:create-owners` asks for their
+      GitHub usernames; do not ask now. On `"status": "error"`, say so and use
+      `OWNERS = {}` in c, which gets a recommendation from git blame and
+      GitHub's suggestions without ownership.
+
+   c. Collect the files and ask again:
+
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae owners --collect
+```
+
+      Keep its `owners` object, exactly as printed, as `OWNERS`. Call
+      `assign_reviewer` with `repo`, `pr_number`, `owners=OWNERS` (no
+      `require_owners`) and `note=NOTE` when there is one, and handle the
+      answer as in step 1. Pass the same `OWNERS` again in step 4.
 
 2. **Print `card` verbatim.** It is rendered server-side, and three blocks lead:
    *Recommended reviewer* (name and role), *Why* (the model's reason first, then
@@ -111,7 +138,7 @@ the card, and puts someone with room in their queue first when it asks for speed
    - **Otherwise** call `assign_reviewer` with `repo`, `pr_number`, `apply=true`,
      `reviewers=ASK` (the exact logins, no `@`), `expected_head=head_sha` and
      `expected_base=base_sha` from the recommendation, plus `owners=OWNERS` when
-     step 1 found any. Never add a name, and never ask for anyone with
+     **Ownership first** ran. Never add a name, and never ask for anyone with
      `needs_access`. Then read `assignment.status`:
 
      - `ok` — say who was asked; name anyone in `already_requested` or
@@ -126,9 +153,9 @@ the card, and puts someone with room in their queue first when it asks for speed
      not installed), report it and say the card stands as a suggestion; never
      retry with other names.
 
-4. **Close** with the link `[<repo>#<pr_number>](<pr_url>)`. When the card says
-   the `.OWNERS.md` files are not merged yet, add one line: they are in the working
-   tree, not committed; commit them through a pull request, and once merged every
+4. **Close** with the link `[<repo>#<pr_number>](<pr_url>)`. When **Ownership
+   first** ran, add one line: the `.OWNERS.md` files are in the working tree, not
+   committed; commit them through a pull request, and once merged every
    recommendation reads them from the repository. Never commit them yourself.
 
    **Do not ask who to ask.** If the user then answers about *who* — "not Ravi
@@ -151,6 +178,7 @@ the card, and puts someone with room in their queue first when it asks for speed
   has none, the files in this working tree are used, and the card says they
   are not merged yet. The branch's always win: once any `.OWNERS.md` is merged,
   local copies are ignored.
-- This command never writes `.OWNERS.md` files.
+- Create ownership only on `owners_missing`, never because this working tree
+  lacks a file: the branch may have them already.
 - If `assign_reviewer` is unavailable (MCP not connected), warn and stop — **do
   not pick a reviewer yourself from `git log` or `git blame`**.

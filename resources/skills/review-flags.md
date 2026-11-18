@@ -25,6 +25,5 @@ flag, or an inversion value other than `true` or `false` **before starting a ses
 the user did not give comes from the team's settings when they set it, and is left out otherwise;
 an omitted `invert_model` uses the account's saved setting, never a default of yours. An explicit
 model or provider wins over inversion. Pass what was given; the server resolves models, providers
-and credentials. With `--model-provider` openai, anthropic or deepseek and `SESSION.llm_key` set to
-`plugin_setting`, also pass `llm_key: true`: the review then runs on the key in the plugin's settings. Report a selection error and stop: never retry with another model, and never drop
+and credentials. Report a selection error and stop: never retry with another model, and never drop
 an option silently.
