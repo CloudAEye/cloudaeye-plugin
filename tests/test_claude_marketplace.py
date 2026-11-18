@@ -120,7 +120,7 @@ def test_no_command_carries_what_keeps_claude_code_asking():
             rel = path.relative_to(EDITION).as_posix()
             assert not line.startswith("cd "), f"{rel}: after a cd Claude Code applies no saved rule to the writes"
             bare = re.sub(r"<[^<>]*>", "", line)                       # the placeholders a skill fills in
-            assert ">" not in bare.replace("2>/dev/null", ""), f"{rel}: a redirection"
+            assert ">" not in bare.replace("2>/dev/null", "").replace("2>&1", ""), f"{rel}: a redirection"
             found = re.search(r"(?:\| |&& )curl (-[^|&;]*)", line)       # the command, not upload.curl
             curl = found.group(1) if found else ""
             assert ": " not in line, f"{rel}: a rule holding ': ' is never saved"
@@ -153,6 +153,9 @@ def test_nothing_reads_as_curl_piped_into_a_program():
         for number, line in enumerate(text.splitlines(), 1):
             shell = re.search(r"\b(sh|bash|zsh) -c\b|\|\s*(sh|bash|zsh)\b", line)
             assert not (shell and "curl" in line), f"{rel}:{number}: a shell and curl on one line"
+            # create-owners labelled each file's blame with `xargs … sh -c` and was the last skill
+            # flagged; `xargs -t` labels it with the git blame line itself, and no command starts a shell.
+            assert not shell, f"{rel}:{number}: a command starts a shell"
 
 
 def test_a_skill_names_curl_only_inside_its_commands():

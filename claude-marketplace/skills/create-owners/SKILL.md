@@ -81,7 +81,7 @@ CloudAEye no longer reads the old name.
    in `.cloudaeye/blame.txt` (the next run replaces it), and prints how many lines that is:
 
    ```bash
-   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 sh -c 'printf "cloudaeye-file %s\n" "$1" && git blame --incremental -w -M -C HEAD -- "$1" 2>/dev/null' blame | grep -E '^(cloudaeye-file |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | tee .cloudaeye/blame.txt | wc -l
+   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 -t git blame --incremental -w -M -C HEAD -- 2>&1 | grep -E '^(git blame --incremental -w -M -C HEAD -- |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | tee .cloudaeye/blame.txt | wc -l
    ```
 
    `0`: no text file under `FOLDER` has any history to count. Say so and stop.
