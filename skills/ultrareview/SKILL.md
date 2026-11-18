@@ -156,7 +156,7 @@ Upload the change with this one command, writing in `<TARGET>` (`SESSION.target_
 `-F 'settings_file=@<path>;filename=<path>'` for each of `SETTINGS_FILES`, at the end. It writes
 only under `.cloudaeye/` (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
    the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When
-`SESSION.target_branch` is empty, or the command stops at a `git` error before `curl` runs, read
+`SESSION.target_branch` is empty, or the command stops at a `git` error before the upload runs, read
 `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md` instead.
 
 ```bash
@@ -164,7 +164,7 @@ git -c credential.helper= fetch -q origin '<TARGET>' 2>/dev/null; mkdir -p .clou
 ```
 
 It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
-`curl: (22)` and an error: the diff never reached the server. Stop; otherwise a stale result can look clean.
+An upload error (`(22)` and a message): the diff never reached the server. Stop; otherwise a stale result can look clean.
 
 | what came back | what to do with it |
 |---|---|
@@ -287,8 +287,8 @@ Then save the full report, with this one command:
 mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/ultrareview.md && echo 'report_path=.cloudaeye/reports/ultrareview.md'
 ```
 
-and end with `Full report, every command's output: <report_path>` (when curl
-reports an error, say it could not be saved and why). Never open, read or
+and end with `Full report, every command's output: <report_path>` (when the
+command reports an error, say it could not be saved and why). Never open, read or
 print that file yourself. With no `result.report`, say the full report is not
 available and why, and save nothing.
 

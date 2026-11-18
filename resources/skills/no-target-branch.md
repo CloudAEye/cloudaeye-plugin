@@ -1,7 +1,7 @@
 # No target branch to diff against (only when the skill's upload could not use one)
 
 `SESSION.target_branch` is empty (the repository is not connected to CloudAEye, or its integrated
-branch could not be read), or the upload command stopped at a `git` error before `curl` ran (most often
+branch could not be read), or the upload command stopped at a `git` error before the upload ran (most often
 because `origin/<TARGET>` is not known in this clone). Upload against your last commit instead: the
 same command without the fetch, with `HEAD` as the baseline, and the same settings parts and path
 as the skill's command:

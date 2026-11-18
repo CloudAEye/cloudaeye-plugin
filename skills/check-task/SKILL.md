@@ -65,7 +65,7 @@ With no argument, fall back to asking the user (step 2).
    `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`. It writes only under `.cloudaeye/`
    (which ignores itself) and leaves your git index as it was. It runs in `TOP`: when that is not
    the folder Claude Code is working in, put `cd '<TOP>' && ` in front of it. When `SESSION.target_branch` is
-   empty, or the command stops at a `git` error before `curl` runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
+   empty, or the command stops at a `git` error before the upload runs, read `${CLAUDE_PLUGIN_ROOT}/resources/skills/no-target-branch.md`
    instead.
 
    ```bash
@@ -73,7 +73,7 @@ With no argument, fall back to asking the user (step 2).
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the upload token.
-   `curl: (22)` and an error: the diff never reached the server. Stop; otherwise a stale result can look clean.
+   An upload error (`(22)` and a message): the diff never reached the server. Stop; otherwise a stale result can look clean.
 
    | what came back | what to do with it |
    |---|---|

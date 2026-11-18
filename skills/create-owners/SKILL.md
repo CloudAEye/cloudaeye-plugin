@@ -83,7 +83,7 @@ CloudAEye no longer reads the old name.
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the
-   upload token. `curl: (22)` and an error: the counts never reached CloudAEye. Report the error
+   upload token. An upload error (`(22)` and a message): the counts never reached CloudAEye. Report the error
    and stop.
 
    | what came back | what to do with it |

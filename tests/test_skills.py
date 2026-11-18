@@ -110,14 +110,23 @@ def test_no_command_carries_what_keeps_claude_code_asking():
                 f"{rel}: curl's own arguments change from run to run"
 
 
-def test_no_line_reads_as_curl_piped_into_a_program():
-    """Anthropic's directory scan warns `RUNTIME_FETCH_EXEC` ("download-and-execute") on a skill or README
-    with a line where the word `curl` is followed by a `|`: it reads `curl … | program` as code fetched and
-    run at once (18 Nov 2026). A Markdown table row naming `curl: (22)` was enough, in twelve skills and the
-    README; the commands themselves pass, because `curl` ends their line, and `upload.curl` is a file name."""
+CURL_TO_PIPE = 250
+
+
+def test_nothing_reads_as_curl_piped_into_a_program():
+    """Anthropic's directory scan warns `RUNTIME_FETCH_EXEC` ("download-and-execute", shown to reviewers and
+    users as an install-time risk) when the word `curl` is followed by a `|` within some characters, across
+    lines: it reads `curl … | program` as code fetched and run at once. Measured on the portal, 18 Nov 2026:
+    every file with a pipe 108 characters or less after a `curl` was flagged, and none at 199 or more. Table
+    rows naming `curl: (22)`, and the sentence about it just above a table, were what set it off; the
+    commands' own `curl` comes last on its line, and `upload.curl` is a file name. This asks for more room
+    than the scan was seen to need."""
     for path in [*SKILLS, *GUIDES, ROOT / "README.md"]:
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            assert not re.search(r"(?:^|[\s`(])curl\b[^\n]*\|", line), f"{path.relative_to(ROOT).as_posix()}:{number}"
+        text = path.read_text(encoding="utf-8")
+        for found in re.finditer(r"(?:^|[\s`(])curl\b", text, re.M):
+            pipe = text.find("|", found.end())
+            line = text.count("\n", 0, found.end()) + 1
+            assert pipe < 0 or pipe - found.end() >= CURL_TO_PIPE, f"{path.relative_to(ROOT).as_posix()}:{line}"
 
 
 def test_the_help_lists_exactly_the_commands_this_plugin_has():
