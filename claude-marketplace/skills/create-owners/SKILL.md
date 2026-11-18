@@ -71,15 +71,25 @@ CloudAEye no longer reads the old name.
    with `/` between names, mapped to its text. Their Teams lines are kept, and a folder that has
    one keeps it.
 
-4. **Count the blame.** Run this one command, writing in `<FOLDER>`, `<UPLOAD_URL>` and
-   `<UPLOAD_TOKEN>` (from `SESSION`). It writes only under `.cloudaeye/` (which ignores itself).
-   It runs in `TOP`: when that is not the folder Claude Code is working in, put `cd '<TOP>' && `
-   in front of it. It runs one `git blame` a file, so give it the Bash tool's longest timeout
-   (10 minutes): about a minute for 300 files. If even that runs out, run the command on a
-   folder instead.
+4. **Count the blame, then send it.** Two commands, in order. Both run in `TOP`: when that is
+   not the folder Claude Code is working in, put `cd '<TOP>' && ` in front of each. Both write
+   only under `.cloudaeye/` (which ignores itself).
+
+   First the count, writing in `<FOLDER>`. It runs one `git blame` a file, so give it the Bash
+   tool's longest timeout (10 minutes): about a minute for 300 files. If even that runs out, run
+   it on a folder instead. It keeps only each file's name and the blame's hunk and author lines,
+   in `.cloudaeye/blame.txt` (the next run replaces it), and prints how many lines that is:
 
    ```bash
-   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/blame.cfg && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 sh -c 'printf "cloudaeye-file %s\n" "$1" && git blame --incremental -w -M -C HEAD -- "$1" 2>/dev/null' blame | grep -E '^(cloudaeye-file |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | curl -sS --fail-with-body -K .cloudaeye/blame.cfg -F 'blame=@-;filename=blame.txt'
+   mkdir -p .cloudaeye && echo '*' | tee .cloudaeye/.gitignore && git grep -I -l -z -e '' -- '<FOLDER>' ':(exclude,glob)**/vendor/**' ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/*.json' ':(exclude,glob)**/*.lock' | xargs -0 -n1 sh -c 'printf "cloudaeye-file %s\n" "$1" && git blame --incremental -w -M -C HEAD -- "$1" 2>/dev/null' blame | grep -E '^(cloudaeye-file |[0-9a-f]{40,64} [0-9]+ [0-9]+ [0-9]+$|author |author-mail |author-time )' | tee .cloudaeye/blame.txt | wc -l
+   ```
+
+   `0`: no text file under `FOLDER` has any history to count. Say so and stop.
+
+   Then send it, writing in `<UPLOAD_URL>` and `<UPLOAD_TOKEN>` from `SESSION`:
+
+   ```bash
+   mkdir -p .cloudaeye && printf 'url = "%s"\nheader = "X-Upload-Token:%s"\n' '<UPLOAD_URL>' '<UPLOAD_TOKEN>' | tee .cloudaeye/blame.cfg && curl -sS --fail-with-body -K .cloudaeye/blame.cfg -F 'blame=@.cloudaeye/blame.txt'
    ```
 
    It prints the upload's settings file, then the server's answer as JSON. Never print the

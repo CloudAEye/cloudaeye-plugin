@@ -97,7 +97,7 @@ def test_every_upload_command_cuts_the_diff_the_same_way():
     for path in [*SKILLS, EDITION / "resources" / "skills" / "no-target-branch.md"]:
         lines += [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()
                   if "X-Upload-Token" in ln and ln.strip().startswith(("git -c credential.helper=", "mkdir -p .cloudaeye"))
-                  and "git blame" not in ln]     # create-owners uploads a blame, not a diff (main's tests/test_skills.py)
+                  and "blame" not in ln]     # create-owners uploads a blame, not a diff
     assert len(lines) == 13
     for line in lines:
         assert "xargs -I{} cp -p {} .cloudaeye/index && export GIT_INDEX_FILE=.cloudaeye/index && git add -N ." in line
@@ -151,7 +151,19 @@ def test_nothing_reads_as_curl_piped_into_a_program():
             line = text.count("\n", 0, found.end()) + 1
             assert pipe < 0 or pipe - found.end() >= 342, f"{rel}:{line}"
         for number, line in enumerate(text.splitlines(), 1):
-            assert not re.search(r"curl.*\|.*\b(sh|bash|zsh)\b", line), f"{rel}:{number}: curl before a shell"
+            shell = re.search(r"\b(sh|bash|zsh) -c\b|\|\s*(sh|bash|zsh)\b", line)
+            assert not (shell and "curl" in line), f"{rel}:{number}: a shell and curl on one line"
+
+
+def test_a_skill_names_curl_only_inside_its_commands():
+    """What was left flagged on 18 Nov 2026 after the pipes were gone: review-arch's prose said "each
+    shell step is the one plain `git` or `curl` command shown, and Claude Code asks before the first
+    run", and create-owners ran `sh -c` and curl in one command (now two). The ten skills cleared once
+    their prose stopped naming curl ("before `curl` runs", "`curl: (22)` and an error"), so the prose
+    of a skill or guide never does; the commands in its ```bash blocks may."""
+    for path in [*SKILLS, *EDITION.glob("resources/skills/*.md")]:
+        prose = re.sub(r"```bash\n.*?```", "", path.read_text(encoding="utf-8"), flags=re.S)
+        assert not re.search(r"\bcurl\b", prose), path.relative_to(EDITION).as_posix()
 
 
 def test_both_editions_have_the_same_commands():

@@ -5,9 +5,9 @@ when_to_use: Use before opening or merging a pull request that adds a dependency
 allowed-tools: Read, Grep, Glob, LS
 ---
 
-Run the steps in order. This skill runs no script: each shell step is the one plain `git` or
-`curl` command shown, and Claude Code asks before the first run of a command it has not been
-allowed. Never print a token.
+Run the steps in order. This skill runs no script: each shell step is the one plain command
+shown, and Claude Code asks before the first run of a command it has not been allowed. Never print
+a token.
 
 ## 1. Start the session
 
