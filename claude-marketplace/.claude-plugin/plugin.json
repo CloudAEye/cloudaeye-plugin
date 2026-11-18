@@ -1,7 +1,7 @@
 {
   "name": "cloudaeye",
   "displayName": "CloudAEye",
-  "version": "0.33.4",
+  "version": "0.33.5",
   "description": "Govern code at AI speed: code review and governance in Claude Code, with bug and OWASP security review, AI-slop score, task validation, change risk and reviewer suggestions.",
   "author": {
     "name": "CloudAEye",
@@ -11,9 +11,6 @@
   "homepage": "https://docs.cloudaeye.com/user-guide/mcp/setup-claude-code.html",
   "repository": "https://github.com/CloudAEye/cloudaeye-plugin",
   "license": "MIT",
-  "privacyPolicyUrl": "https://www.cloudaeye.com/privacy-policy.html",
-  "termsOfServiceUrl": "https://www.cloudaeye.com/terms.html",
-  "documentationUrl": "https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html",
   "keywords": [
     "code-review",
     "security",
