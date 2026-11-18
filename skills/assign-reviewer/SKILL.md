@@ -69,7 +69,8 @@ the card, and puts someone with room in their queue first when it asks for speed
    - `status: ok` — go to step 2. With no `.OWNERS.md` anywhere, the suggestion
      comes from who wrote the lines the change rewrites, who reviewed and fixed
      these files before, and GitHub's own suggestions; the card says what it was
-     based on. Pass the same `OWNERS` again in step 4.
+     based on, and `/cloudaeye:create-owners` writes the files from git history.
+     Pass the same `OWNERS` again in step 4.
 
 2. **Print `card` verbatim.** It is rendered server-side, and three blocks lead:
    *Recommended reviewer* (name and role), *Why* (the model's reason first, then
@@ -110,7 +111,7 @@ the card, and puts someone with room in their queue first when it asks for speed
    - **Otherwise** call `assign_reviewer` with `repo`, `pr_number`, `apply=true`,
      `reviewers=ASK` (the exact logins, no `@`), `expected_head=head_sha` and
      `expected_base=base_sha` from the recommendation, plus `owners=OWNERS` when
-     **Ownership first** ran. Never add a name, and never ask for anyone with
+     step 1 found any. Never add a name, and never ask for anyone with
      `needs_access`. Then read `assignment.status`:
 
      - `ok` — say who was asked; name anyone in `already_requested` or
@@ -125,9 +126,9 @@ the card, and puts someone with room in their queue first when it asks for speed
      not installed), report it and say the card stands as a suggestion; never
      retry with other names.
 
-4. **Close** with the link `[<repo>#<pr_number>](<pr_url>)`. When **Ownership
-   first** ran, add one line: the `.OWNERS.md` files are in the working tree, not
-   committed; commit them through a pull request, and once merged every
+4. **Close** with the link `[<repo>#<pr_number>](<pr_url>)`. When the card says
+   the `.OWNERS.md` files are not merged yet, add one line: they are in the working
+   tree, not committed; commit them through a pull request, and once merged every
    recommendation reads them from the repository. Never commit them yourself.
 
    **Do not ask who to ask.** If the user then answers about *who* — "not Ravi

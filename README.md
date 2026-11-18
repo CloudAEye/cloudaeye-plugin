@@ -21,11 +21,11 @@ The coding agent writes the code. CloudAEye helps you ship it with confidence.
 3. **Connect your repository.** In your Git repository, run `/cloudaeye:init`. CloudAEye builds its picture of the code, which takes 10–15 minutes depending on the repository's size.
 4. **Review.** Run `/cloudaeye:inspect` after each coding task, or `/cloudaeye:review` before you open a pull request.
 
-The commands run in Claude Code opened in a Git repository, and need Git 2.30 or newer and `curl` (on Windows, Git for Windows provides both, and the Bash they run in). `/cloudaeye:create-owners` also needs Python 3.
+The commands run in Claude Code opened in a Git repository, and need Git 2.30 or newer and `curl` (on Windows, Git for Windows provides both, and the Bash they run in).
 
 **Cursor:** install through Cursor's [plugin flow](https://cursor.com/docs/plugins) and authenticate the CloudAEye MCP connection. It needs Node.js for the `mcp-remote` bridge, plus Git, Bash and curl (Git Bash on Windows).
 
-**Claude Code asks before each new step, the first time.** The commands run no script of their own (only `/cloudaeye:create-owners` runs one, on your machine): a command finds your repository with a read-only `git` command, and a review uploads your change with one line of `git` and `curl` that Claude Code shows you before it runs. Choose **Yes, and don't ask again** for each; the upload line asks on your first two runs (the second time for the `.gitignore` it keeps in `.cloudaeye/`), and after that nothing is asked again in that repository, in any session. To allow CloudAEye's own tools in every repository at once, add `"mcp__plugin_cloudaeye_cloudaeye"` to `permissions.allow` in your Claude Code settings.
+**Claude Code asks before each new step, the first time.** The commands run no script of their own: a command finds your repository with a read-only `git` command, and a review uploads your change with one line of `git` and `curl` that Claude Code shows you before it runs. Choose **Yes, and don't ask again** for each; the upload line asks on your first two runs (the second time for the `.gitignore` it keeps in `.cloudaeye/`), and after that nothing is asked again in that repository, in any session. To allow CloudAEye's own tools in every repository at once, add `"mcp__plugin_cloudaeye_cloudaeye"` to `permissions.allow` in your Claude Code settings.
 
 ## Commands
 
@@ -48,7 +48,7 @@ The commands run in Claude Code opened in a Git repository, and need Git 2.30 or
 | `/cloudaeye:risk-score` | Whether an open PR needs a human reviewer, and why, from its files' history, its author's recent PRs and its AI slop. With no PR number it assesses your change before you push it. |
 | `/cloudaeye:triage-prs` | Which PR to review next across every connected repository, and why. A note like "I have half an hour" steers it. Reads only. |
 | `/cloudaeye:assign-reviewer` | Who should review an open PR, why, and what they should check. A note like "Tom is away" steers it. It requests the review from the recommended reviewer when they can review in the repository, and only suggests otherwise. |
-| `/cloudaeye:create-owners` | Write `.OWNERS.md` files from git history: who writes each part of the code. Runs locally; never commits. |
+| `/cloudaeye:create-owners` | Write `.OWNERS.md` files from git history: who writes each part of the code. Writes in your working tree; never commits. |
 | `/cloudaeye:config` | Your team's settings, in a `.cloudaeye.config` file you commit: which checks ultrareview runs, the limits it may approve within and how many reviewers it assigns, the review's severity floor and skipped paths, and your own LLM. Also syncs your organisation's review rules into `.cloudaeye.rules`. |
 | `/cloudaeye:add-docs` | Generate docstrings for an open PR and post them as review suggestions. |
 | `/cloudaeye:add-tests` | Generate unit tests for an open PR and post them as review suggestions. |
@@ -108,6 +108,7 @@ Your team's settings live in `.cloudaeye.config` and `.cloudaeye.rules` files yo
 - `add-docs` and `add-tests` post suggestions on the pull request, and `create-issue` files tickets. All three ask first.
 - `assign-reviewer` requests the review from the recommended reviewer when they can review in the repository, and from anyone else only when you name them.
 - `config` writes only `.cloudaeye.config` and `.cloudaeye.rules` in your working tree, and never commits them. It sends their text to CloudAEye, which works out the change and sends back what to write.
+- `create-owners` writes only `.OWNERS.md` files in your working tree, and never commits them. CloudAEye works them out and sends back what to write.
 - `explain` may comment on a Jira issue.
 
 **What leaves your machine**
@@ -116,7 +117,7 @@ Your team's settings live in `.cloudaeye.config` and `.cloudaeye.rules` files yo
 - Review commands (`inspect`, `security`, `review`, `ultrareview`) and `control-flow` send your `.cloudaeye.config` and `.cloudaeye.rules` files with the change, so CloudAEye can apply your team's settings.
 - Long reports (`review-arch`, `control-flow`, `risk-score`, `slop-score`, `ultrareview`) print a short version in the terminal and save the whole report, diagrams included, to `.cloudaeye/reports/<command>.md`, downloaded with `curl`; it never passes through the model.
 - Pull-request commands (`#412`), `triage-prs` and `assign-reviewer` upload no code: CloudAEye reads GitHub itself. `assign-reviewer` sends any `.OWNERS.md` files in your working tree.
-- `create-owners` runs locally with Git and Python and sends nothing.
+- `create-owners` runs `git blame` on your machine and sends only its line counts: how many lines each author wrote in each file and when, under the author's name and email address as git records them. No code and no commit messages; CloudAEye keeps a digest of each address, never the address. It sends your `.OWNERS.md` files too, so their Teams lines are kept.
 - Nothing reads credentials from your machine. Your GitHub login comes from your CloudAEye sign-in. To review with your own LLM, enter your API key in the plugin's settings (**Your LLM API key**, under `/plugin` → CloudAEye): Claude Code keeps it in your system's credential store and sends it only to CloudAEye, on its own connection, never through the conversation. CloudAEye stores it encrypted with your session and stops using it after 24 hours. Left empty, and in Cursor, the key saved in the CloudAEye console is used.
 - Everything goes to the CloudAEye server the plugin is set to (`https://api.cloudaeye.com/mcp` unless you self-host). The commands contact no other host, except `git fetch` from your repository's own remote.
 
@@ -150,7 +151,6 @@ or set it later with `/plugin configure cloudaeye@cloudaeye`, then start a new s
 | `curl: (6)` or `(7)` | Check network access |
 | The review says it used your last commit as its baseline | Connect the repository (`/cloudaeye:init`) so its integrated branch is used, and make sure `origin/<that branch>` exists in your clone |
 | `error: unknown option 'merge-base'` | Update Git to 2.30 or newer |
-| `/cloudaeye:create-owners` says Python was not found | Install Python 3 and make sure `python`, `python3` or `py` runs it |
 | A command asks to approve a `git` or `curl` step | Expected: the commands run plain `git` and `curl` steps that Claude Code shows you first. Approve it, or choose to stop being asked |
 
 ## Privacy
