@@ -109,8 +109,11 @@ CloudAEye no longer reads the old name.
    `from` to its `to` (paths from `TOP`; put `cd '<TOP>' && ` in front when needed):
 
    ```bash
-   mv '<from>' '<to>' && mv '<from>' '<to>'
+   git mv '<from>' '<to>' && git mv '<from>' '<to>'
    ```
+
+   Git refuses a file it does not track (`not under version control`): for that one, Read
+   `from`, Write its text to `to`, and tell the user the old file can be deleted.
 
    Then each of `writes`, at `TOP` + its `path`: when it has `edits`, apply each one with Edit
    (`old_string` → `new_string`), in order; otherwise Write its `text` as the whole file. Use the
