@@ -38,9 +38,10 @@ Claude Code installs the main edition from the repository root and reads skills 
   documentation's Skills & Commands and User Guide pages.
 - **What the plugin sends anywhere is listed under "What leaves your machine" in both READMEs.** The
   directory's security scan checks the plugin against it.
-- **Versions.** Raise `version` in `.claude-plugin/plugin.json` (and `.cursor-plugin/plugin.json`)
-  for a main-edition release, and in `claude-marketplace/.claude-plugin/plugin.json` for the
-  directory. The directory publishes a new version only after its own checks and a Publish click.
+- **Versions.** One version for both editions: raise `version` in `.claude-plugin/plugin.json`,
+  `.cursor-plugin/plugin.json` and `claude-marketplace/.claude-plugin/plugin.json` together, to the
+  same number (`test_both_editions_carry_one_version`). The directory publishes a new version only
+  after its own checks and a Publish click.
 - **The server must be at least as new as what the release edition calls**: `repo_settings` for
   `/cloudaeye:config`, `create_owners` and the `blame` upload for `/cloudaeye:create-owners`, the
   settings files on the upload, `repo_url` as git prints it, the `X-CloudAEye-LLM-Key` header, and

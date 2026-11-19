@@ -185,6 +185,15 @@ def test_both_editions_have_the_same_commands():
     assert {p.parent.name for p in SKILLS} == mains
 
 
+def test_both_editions_carry_one_version():
+    """One number for both editions and Cursor's manifest (19 Nov 2026): two numbers for one release meant
+    two to raise and two to explain, and 0.36.0 beside 0.34.0 read as two different products."""
+    versions = {str(path.relative_to(ROOT)): json.loads(path.read_text(encoding="utf-8"))["version"]
+                for path in (ROOT / ".claude-plugin" / "plugin.json", ROOT / ".cursor-plugin" / "plugin.json",
+                             EDITION / ".claude-plugin" / "plugin.json")}
+    assert len(set(versions.values())) == 1, versions
+
+
 def test_claude_code_never_loads_this_folder_as_part_of_the_main_edition():
     """CloudAEye's own marketplace installs the repository root, this folder included; Claude Code reads a
     plugin's skills only from its own skills/ folder, so these never show as a second set of commands."""

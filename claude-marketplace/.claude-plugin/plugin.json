@@ -1,7 +1,7 @@
 {
   "name": "cloudaeye",
   "displayName": "CloudAEye",
-  "version": "0.34.0",
+  "version": "0.36.0",
   "description": "Govern code at AI speed: code review and governance in Claude Code, with bug and OWASP security review, AI-slop score, task validation, change risk and reviewer suggestions.",
   "author": {
     "name": "CloudAEye",
