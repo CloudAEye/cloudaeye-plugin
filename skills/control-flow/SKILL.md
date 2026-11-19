@@ -146,9 +146,10 @@ prompt for a key.
 
    - **it opens with one line beginning "This code change …"** — print it first
      and as written; it is the sentence a reviewer decides on;
-   - **a facts table** — why this flow, what the call sequence did, how much of
-     the change is *not* in the diagram, and the cross-repository line. Its
-     "Changes not shown" row is the one number nothing else carries;
+   - **the facts, one bullet each** — why this flow, what the call sequence did,
+     how much of the change is *not* in the diagram, and the cross-repository
+     line. Print them as bullets, never as a table. "Changes not shown" is the
+     one number nothing else carries;
    - calls the code graph could not follow are counted (`unresolved`), not
      listed: there is no list of them to print;
    - the footer says the diagram is structure, not a trace.
