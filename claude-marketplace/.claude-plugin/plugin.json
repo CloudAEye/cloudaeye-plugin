@@ -12,7 +12,7 @@
   "repository": "https://github.com/CloudAEye/cloudaeye-plugin",
   "documentationUrl": "https://docs.cloudaeye.com/user-guide/mcp/usage-guide.html",
   "supportUrl": "https://docs.cloudaeye.com/other/support.html",
-  "privacyPolicyUrl": "https://www.cloudaeye.com/privacy-policy.html",
+  "privacyPolicyUrl": "https://github.com/CloudAEye/cloudaeye-plugin/blob/main/claude-marketplace/PRIVACY.md",
   "termsOfServiceUrl": "https://www.cloudaeye.com/terms.html",
   "license": "MIT",
   "keywords": [

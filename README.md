@@ -181,7 +181,7 @@ Sign-in needs an interactive client, so unattended CI is not supported yet.
 
 ## Privacy
 
-How CloudAEye handles your data: [Privacy Policy](https://www.cloudaeye.com/privacy-policy.html) · [Terms](https://www.cloudaeye.com/terms.html). Questions: support@cloudaeye.com.
+How CloudAEye handles your data: [Plugin privacy policy](https://github.com/CloudAEye/cloudaeye-plugin/blob/main/claude-marketplace/PRIVACY.md) · [Website privacy policy](https://www.cloudaeye.com/privacy-policy.html) · [Terms](https://www.cloudaeye.com/terms.html). Questions: support@cloudaeye.com.
 
 ## License
 
