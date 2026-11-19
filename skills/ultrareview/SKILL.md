@@ -155,7 +155,7 @@ Read the summary lines — the upload's when it ran, the first command's when it
 | `diff_bytes=0` | Nothing pending — report "nothing to review" and stop. |
 | `author=` | Your GitHub username, for the risk step and the verdict. Empty means leave `author` out: the server tries your sign-in. |
 | `settings:` | The team's settings as JSON (`SETTINGS`). When any apply to this change, `settings-guide:` follows them and says what they turn off and what to pass; with none, nothing follows and every check runs. |
-| `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
+| `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point.* Nothing more: `base_age` is how old <branch>'s newest commit is, not the fork point, and on a quiet repository an old one means nothing newer exists. |
 | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
 | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 

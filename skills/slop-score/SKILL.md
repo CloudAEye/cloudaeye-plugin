@@ -83,11 +83,11 @@ There is deliberately **no severity flag.** A floor drops findings before they a
    |---|---|
    | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to score" and stop. |
-   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
+   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point.* Nothing more: `base_age` is how old <branch>'s newest commit is, not the fork point, and on a quiet repository an old one means nothing newer exists. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
-   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads.
+   **Which baseline applied must reach the user.** Every degradation still produces output that looks correct, so silence about it is the one failure mode that misleads. Say it **once**, before the tool call; the final answer does not say it again.
 2. Call CloudAEye's `slop_score` MCP tool **once** with:
    - `session_id`: `SESSION.session_id`
    - `context`: `{"scope_path": "<the path>"}` when the run is scoped to a path, as the scoped-run guide says. Omit it otherwise.
@@ -103,18 +103,18 @@ There is deliberately **no severity flag.** A floor drops findings before they a
    job ID throughout; never call `slop_score` again to check progress. Do not
    continue below until a usable original response has been obtained.
 
-4. Report the inner `result` to the user:
+4. Report the inner `result` to the user. A `task_description` the session carries is an earlier `/cloudaeye:check-task`'s, kept for that command: never mention it here.
 
    - **First: a `degraded` block.** The review underneath ran with no post-edit source staged, so every signal read an empty file. **Report it as a failed run and stop — do not present the card, and never call it a low score.** The server does not cache a degraded run, so re-running once the cause is fixed gives a real answer.
 
-   - **Save the card as a file too**, after printing it (exactly this one command, alone in its Bash call):
+   - **Save the card as a file first**, before you print anything (exactly this one command, alone in its Bash call):
 
      ```bash
      sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report slop-score '<result.report as JSON>'
      ```
 
      and end with `Saved: <report_path>`. Skip this when the result has no `report`.
-   - **Print the resolved response's `card` exactly as it comes.** It is markdown (a heading, a table of the nine signals, the numbered findings): print it as markdown, **never inside a code block** — Claude Code colours a code block with its own theme, which is unreadable on a light terminal. Do not reformat it, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, and the header says when not every signal could be measured. Both are lost the moment the card is retyped.
+   - **Then your final message opens with the card, verbatim and whole**, before any words of your own: a summary in place of the card is the one way this command fails a reader (live, 19 Nov 2026, an agent saved the file and wrote only its summary). Print the resolved response's `card` exactly as it comes. It is markdown (a heading, a table of the nine signals, the numbered findings): print it as markdown, **never inside a code block** — Claude Code colours a code block with its own theme, which is unreadable on a light terminal. Do not reformat it, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, and the header says when not every signal could be measured. Both are lost the moment the card is retyped.
 
    - **`band_source: "judged"`, when present.** The arithmetic's band was moved one step after a model weighed the evidence — `band_reason` says why and `arithmetic_band` is what it moved from. The card already prints all three; do not drop them when summarising, and do not present the judged band as if the arithmetic produced it. When the field is absent the band is the arithmetic's and there is nothing to explain.
 
@@ -139,7 +139,7 @@ There is deliberately **no severity flag.** A floor drops findings before they a
   dependent tools read the completed session report, not a pending job.
 
 - **The score is arithmetic; only the band is judged.** Every point traces to a finding with a file and a line, which is why the card can be argued with. If the user disputes a row, look at the evidence under it rather than defending the row. The one model judgment is the band, it can move by one step at most, and its reason is printed — so that is also arguable rather than an oracle.
-- **A low score is not an approval.** These nine signals are about the shape of a change, not its correctness — a change can be perfectly clean here and still be wrong. For bugs run `/cloudaeye:inspect`, and for the security surface `/cloudaeye:security`. Say this when the user reads a low score as "good to merge".
+- **A low score is not an approval.** These nine signals are about the shape of a change, not its correctness — a change can be perfectly clean here and still be wrong. For bugs run `/cloudaeye:inspect`, and for the security surface `/cloudaeye:security`. Say this only when the user reads a low score as "good to merge" — never unasked, and never about a score above the lowest band, where "a low score" contradicts the card.
 - **Volume is context, not a signal.** The headline reports lines, files and how many changed functions carry a real behavioural edit. "1,200 lines, 65 files, two behavioural changes" is the shape the whole feature exists to make visible, and it contributes no points on purpose — a big change is not a bad one.
 - **Commit shape is reported absent, never clean.** A session carries no commit list, so the "one enormous commit, generic message" signal cannot be measured here and says so rather than passing.
 - **Generated and vendored files are excluded**, and the exclusion is reported. Lockfiles and generated output are the reason a "1,200 lines changed" headline is usually wrong.

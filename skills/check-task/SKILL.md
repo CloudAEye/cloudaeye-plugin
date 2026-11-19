@@ -65,7 +65,7 @@ With no argument, fall back to asking the user (step 2).
    | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
    | `prior_task` | Offer it for reuse in step 2; never reuse it silently. |
-   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
+   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point.* Nothing more: `base_age` is how old <branch>'s newest commit is, not the fork point, and on a quiet repository an old one means nothing newer exists. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
