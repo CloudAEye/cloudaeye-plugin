@@ -60,15 +60,24 @@ stays under your Git provider's or tracker's control.
 
 ## How long it is kept
 
+**What the plugin sends** is gone within 30 days of its last use:
+
 | Data | Kept |
 |---|---|
 | Uploaded changes, staged files, review results and `git blame` counts | deleted after 7 days without activity |
-| The review session's record (repository, branch, the task you checked against) | deleted after 30 days without activity |
-| Command results in the queue | removed after 7 days; the job record after 30 days |
 | Your own AI model key | stored encrypted with the session, and not used after 24 hours |
 | Settings files | not stored |
-| Per-pull-request summaries (checklist results, suggested reviewers) | kept while your organisation uses CloudAEye, so a repeated command answers without running again |
-| The repository index and usage records | kept while your organisation uses CloudAEye |
+| The review session's record (repository, branch, the task you checked against) | deleted after 30 days without activity |
+| Command results in the queue | removed after 7 days; the job record after 30 days |
+
+**What CloudAEye produces or reads itself**, rather than receiving from the plugin, is kept while
+your organisation uses CloudAEye:
+
+| Data | Why |
+|---|---|
+| Per-pull-request summaries (checklist results, suggested reviewers), which CloudAEye generates | so a repeated command answers without running again |
+| The repository index, which CloudAEye builds from your Git provider | so reviews can see beyond the change |
+| Usage records | for your organisation's usage and billing |
 
 To have any of it deleted sooner, write to support@cloudaeye.com.
 
