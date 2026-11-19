@@ -76,17 +76,28 @@ On `completed`, print `✅ CloudAEye finished.` and use `result` below. An inner
 ## 4. Show the result
 
 **Working tree.** First save the full report, which has the pictures and the
-repository's layers (exactly this one command, alone in its Bash call):
+repository's layers, and beside it the same report as a web page with the pictures
+drawn (exactly this one command, alone in its Bash call):
 
 ```bash
 sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report review-arch '<result.report as JSON>'
 ```
 
 Then your final message is **`result.card` exactly as given and whole**: it is
-already short text made for a terminal. Do not reformat it, renumber findings,
-or add your own analysis. End it with one line: `Full report with diagrams:
-<report_path>` (or, on `report_error=…`, that the full report could not be
-saved and why). Never open, read or print that file yourself.
+markdown made for a terminal. Print it as markdown, **never inside a code block**
+(Claude Code colours a code block with its own theme, which is unreadable on a
+light terminal). Do not reformat it, renumber findings,
+or add your own analysis. End it with one line: when the save printed `page_url=`,
+`Diagrams: [open review-arch.html in your browser](<page_url>) — or ask me to open it.`;
+otherwise `Full report with diagrams: <report_path>` (or, on `report_error=…`,
+that the full report could not be saved and why). Never open, read or print
+either file yourself unless the user asks to see the pictures. **When they do**,
+open the page (exactly this one command, alone in its Bash call) and say it
+opened, or give the `page_url=` it prints:
+
+```bash
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae view review-arch
+```
 
 **Pull request.** The review is posted as a comment. Print the verdict line and
 the findings from `result.card`, then *Posted on the pull request:* with

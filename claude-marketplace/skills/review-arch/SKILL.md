@@ -76,17 +76,26 @@ On `completed`, print `✅ CloudAEye finished.` and use `result` below. An inner
 ## 4. Show the result
 
 **Working tree.** First save the full report, which has the pictures and the
-repository's layers, with this one command:
+repository's layers, and beside it the same report as a web page with the pictures
+drawn, with this one command:
 
 ```bash
-mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/review-arch.md && echo 'report_path=.cloudaeye/reports/review-arch.md'
+mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'header = "X-Report-Token:%s"\nurl = "%s"\noutput = ".cloudaeye/reports/review-arch.md"\nurl = "%s?format=html"\noutput = ".cloudaeye/reports/review-arch.html"\n' '<result.report.token>' '<result.report.url>' '<result.report.url>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl && echo 'report_path=.cloudaeye/reports/review-arch.md page_path=.cloudaeye/reports/review-arch.html'
 ```
 
 Then your final message is **`result.card` exactly as given and whole**: it is
-already short text made for a terminal. Do not reformat it, renumber findings,
-or add your own analysis. End it with one line: `Full report with diagrams:
-<report_path>` (or, on `report_error=…`, that the full report could not be
-saved and why). Never open, read or print that file yourself.
+markdown made for a terminal. Print it as markdown, **never inside a code block**
+(Claude Code colours a code block with its own theme, which is unreadable on a
+light terminal). Do not reformat it, renumber findings,
+or add your own analysis. End it with one line: when `page_path=` was printed,
+`Diagrams: [open review-arch.html in your browser](file://<TOP>/.cloudaeye/reports/review-arch.html) — or ask me to open it.`
+(`TOP` as the repository root from step 1, with forward slashes); otherwise
+`Full report with diagrams: <report_path>` (or, on `report_error=…`, that the
+full report could not be saved and why). Never open, read or print either file
+yourself unless the user asks to see the pictures. **When they do**, open the
+page with the system's own opener — `open .cloudaeye/reports/review-arch.html` on
+macOS, `start "" .cloudaeye/reports/review-arch.html` on Windows,
+`xdg-open .cloudaeye/reports/review-arch.html` on Linux — and say it opened.
 
 **Pull request.** The review is posted as a comment. Print the verdict line and
 the findings from `result.card`, then *Posted on the pull request:* with

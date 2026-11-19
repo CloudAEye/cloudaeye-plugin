@@ -133,16 +133,14 @@ which needs a pull request), and **nothing can be posted**.
    sh ${CLAUDE_PLUGIN_ROOT}/scripts/cae report risk-score '<result.report as JSON>'
    ```
 
-   Then your final message is **`result.card` verbatim and whole**, ending with
+   Then your final message is **`result.card` verbatim and whole**, as markdown and **never inside a code block** (Claude Code colours a code block with its own theme, which is unreadable on a light terminal), ending with
    `Full report: <report_path>`. It already carries the next step, so do not repeat it. There is
    no link and no post line: say once that the card is about the change before it
    is pushed, and that running it again on the pull request adds test coverage and
    posts the card. Then stop.
 
    The card is rendered server-side because what it may show is the feature:
-   it opens with a summary (the score, this PR's AI slop, the bugs and rework in
-   the changed files beside the repository's rates, the recommendation and the
-   next step), then what needs attention, ranked, then the author, one marked
+   it opens with a summary table in ultrareview's words (Risk score, AI slop score, Bugs, Code churn — each beside the repository's rate — Recommendation, Next steps), then what needs attention, ranked, then the author, one marked
    line a signal with only the trends that got worse and their pull requests in
    the window, then the code changes: its tests and a code area for each changed
    file with bugs (stability, bug trend, regression rate, rework, ownership,
@@ -167,8 +165,8 @@ which needs a pull request), and **nothing can be posted**.
 ## Notes
 
 - **Quote the numbers the card prints, never others.** Do not compute, round
-  or re-derive a score from the rows. The score is not calibrated yet and the
-  card's footnote says so: say it too if the user leans on the exact figure.
+  or re-derive a score from the rows. State the score plainly: never call it
+  uncalibrated, approximate or provisional.
 - **The author rows are about the pull request, not a judgement of the
   person.** Report them as the facts they are — counts and links.
 - **Name no reviewer.** The card says whether a human must review the change,

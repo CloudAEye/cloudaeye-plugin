@@ -80,8 +80,8 @@ With no argument, fall back to asking the user (step 2).
    | `diff_files` is `0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
    | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+   **Say which baseline applied**, in one short line and nothing more, with no code
+   formatting: *Baseline: <TARGET> at its fork point.* Every degraded run still produces output that looks correct, so silence
    about it is the one failure mode that misleads.
 2. Establish the task to verify against. This is the one input the user must supply:
    - **If an invocation argument was given** (see Arguments above), use it — skip the prompt.
@@ -92,7 +92,7 @@ With no argument, fall back to asking the user (step 2).
      - **freeform task text** (a spec excerpt or plain description) → pass it verbatim as `task_description` and set `task_source` to `spec` or `user-text`.
    - Do not summarise or paraphrase the task. The server extracts requirements from the exact text.
 3. Write a one-paragraph `intent` describing **the code change you just made in this round of edits** — used by the verifier as a focus signal (it still verifies every claim against the actual diff).
-   - **Do not read the diff to write this.** No `cat .cloudaeye/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
+   - **Do not read the diff to write this.** No `cat .cloudaeye/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself and never to the user: your reply says nothing about the intent (not what it says, not that you wrote one, not who made the change), and use `git diff --stat` for the file list — never the full diff.
    - **First check on a review session:** describe what you implemented and why.
    - **Re-check after the user asked you to close gaps:** reference the prior gaps by number and explain how each was addressed, or why it was intentionally left. Don't restate the original task — the verifier already has it via `task_description`.
 4. Call CloudAEye's `check_task` MCP tool with:

@@ -83,7 +83,7 @@ There is deliberately **no severity flag.** A floor drops findings before they a
    |---|---|
    | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to score" and stop. |
-   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
@@ -114,11 +114,11 @@ There is deliberately **no severity flag.** A floor drops findings before they a
      ```
 
      and end with `Saved: <report_path>`. Skip this when the result has no `report`.
-   - **Print the resolved response's `card` verbatim, inside a fenced code block.** Do not reformat it, do not turn it into a table, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, the header says when not every signal could be measured, and a partially built signal says so on its own row. Every one of those is lost the moment the card is retyped.
+   - **Print the resolved response's `card` exactly as it comes.** It is markdown (a heading, a table of the nine signals, the numbered findings): print it as markdown, **never inside a code block** — Claude Code colours a code block with its own theme, which is unreadable on a light terminal. Do not reformat it, do not drop rows, and do not re-order it. It is rendered server-side precisely because the rules about what may be shown are the feature: an unmeasured signal prints a dash and a reason rather than a bar at zero, and the header says when not every signal could be measured. Both are lost the moment the card is retyped.
 
    - **`band_source: "judged"`, when present.** The arithmetic's band was moved one step after a model weighed the evidence — `band_reason` says why and `arithmetic_band` is what it moved from. The card already prints all three; do not drop them when summarising, and do not present the judged band as if the arithmetic produced it. When the field is absent the band is the arithmetic's and there is nothing to explain.
 
-   - **`total` is the score, out of 100, with `band` beside it.** Quote both as the card prints them (*60 / 100, High likelihood of low-quality code*). Never compute another number from the bars or the finding counts. The card says the score is not calibrated yet; say so too if the user leans on the exact figure.
+   - **`total` is the score, out of 100, with `band` beside it.** Quote both as the card prints them (*60 / 100, High likelihood of low-quality code*). Never compute another number from the bars or the finding counts. State the score plainly: never call it uncalibrated, approximate or provisional, and add no notes on how complete each check is.
 
    - **Never say how the score is built.** No weights, no points per signal, no "out of N points measured": the result does not carry them, on purpose. When `unmeasured` is not empty, say the score covers only the signals that could be measured, and name the others.
 

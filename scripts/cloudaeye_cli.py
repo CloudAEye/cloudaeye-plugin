@@ -11,7 +11,9 @@
                                           diff the working tree and upload it
     cae pr-settings '<start_session answer>' [--review] [--guide NAME]
                                           a pull request's settings, read at its target branch
-    cae report <name> '<result.report>'   save a command's whole report to .cloudaeye/reports/
+    cae report <name> '<result.report>'   save a command's whole report to .cloudaeye/reports/, with
+                                          its page (diagrams drawn) when the server serves one
+    cae view <name>                       open that page in the browser
     cae login                             the developer's GitHub login, when it can be told
     cae open '<url>'                      open CloudAEye's connect page in the browser
     cae config <args...>                  cloudaeye_config.py, as it is
@@ -177,6 +179,32 @@ def open_link(args: list[str]) -> int:
     return 0
 
 
+def view(args: list[str]) -> int:
+    """Open a saved report's page (`.cloudaeye/reports/<name>.html`) in the browser: `opened=yes`, or
+    `page_url=<file URL>` when no browser could be opened, or `view_error=<reason>`."""
+    import webbrowser
+
+    import cloudaeye_report
+
+    name = args[0] if args else ""
+    if not cloudaeye_report.NAME.match(name):
+        return _fail("view_error=bad_name")
+    try:
+        root = cloudaeye_report.repository_root()
+    except cloudaeye_report.ReportError:
+        return _fail("view_error=not_a_git_repo")
+    page = root / ".cloudaeye" / "reports" / f"{name}.html"
+    if not page.is_file():
+        return _fail("view_error=no_page")
+    url = page.resolve().as_uri()
+    try:
+        opened = webbrowser.open(url)
+    except Exception:
+        opened = False
+    print("opened=yes" if opened else f"page_url={url}")
+    return 0
+
+
 def config_start(_args: list[str]) -> int:
     """What `/cloudaeye:config` needs first: the repository, and the settings files it already has."""
     import contextlib
@@ -250,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.argv = ["create_owners.py", *args]
         return create_owners.main()
     steps = {"upload": upload, "guide": guide, "pr-settings": pr_settings, "report": report, "login": login, "open": open_link,
-             "config-start": config_start, "config-file": config_file}
+             "view": view, "config-start": config_start, "config-file": config_file}
     if command in steps:
         return steps[command](args)
     return _fail("cloudaeye_error=unknown_command")

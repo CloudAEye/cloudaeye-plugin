@@ -59,10 +59,13 @@ def server():
 
         def do_GET(self):
             ok = self.headers.get("X-Report-Token") == "r" * 40
+            page = self.path.endswith("format=html") and seen.get("page")
             self.send_response(200 if ok else 401)
+            if page:
+                self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             if ok:
-                self.wfile.write(seen["report"])
+                self.wfile.write(page or seen["report"])
 
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -160,6 +163,21 @@ def test_the_report_is_saved_whole_under_the_ignored_workspace(repo, server):
               env={"CE_REPORT_TOKEN": "r" * 40})
     assert out.stdout.strip() == f"report_path=.cloudaeye/reports/review-arch.md report_bytes={len(server['report'])}"
     assert (repo / ".cloudaeye" / "reports" / "review-arch.md").read_bytes() == server["report"]
+    assert git(repo, "status", "--short") == "" and "r" * 40 not in out.stdout
+    # a server from before the page answers `?format=html` with markdown: no page, nothing said
+    assert not (repo / ".cloudaeye" / "reports" / "review-arch.html").exists()
+
+
+def test_the_report_s_page_is_saved_beside_it_when_the_server_serves_one(repo, server):
+    """A terminal draws no mermaid: the page draws the diagrams in a browser (`cae view <name>`)."""
+    server["page"] = b"<!doctype html><title>Control flow</title>"
+    out = run("cloudaeye_report.py", "--url", f"{server['url']}/report/j1", "--name", "control-flow", cwd=repo,
+              env={"CE_REPORT_TOKEN": "r" * 40})
+    page = repo / ".cloudaeye" / "reports" / "control-flow.html"
+    assert out.returncode == 0 and page.read_bytes() == server["page"]
+    lines = out.stdout.strip().splitlines()
+    assert lines[0].startswith("report_path=.cloudaeye/reports/control-flow.md ")
+    assert lines[1] == f"page_path=.cloudaeye/reports/control-flow.html page_url={page.resolve().as_uri()}"
     assert git(repo, "status", "--short") == "" and "r" * 40 not in out.stdout
 
 

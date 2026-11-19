@@ -65,7 +65,7 @@ With no argument, fall back to asking the user (step 2).
    | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to check — no pending changes" and stop. |
    | `prior_task` | Offer it for reuse in step 2; never reuse it silently. |
-   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 
@@ -79,7 +79,7 @@ With no argument, fall back to asking the user (step 2).
      - **freeform task text** (a spec excerpt or plain description) → pass it verbatim as `task_description` and set `task_source` to `spec` or `user-text`.
    - Do not summarise or paraphrase the task. The server extracts requirements from the exact text.
 3. Write a one-paragraph `intent` describing **the code change you just made in this round of edits** — used by the verifier as a focus signal (it still verifies every claim against the actual diff).
-   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself, never as a line to the user, and use `git diff --stat` for the file list — never the full diff.
+   - **Do not read the diff to write this.** No `cat .cloudaeye/session/session.diff`, no `git diff`. You made these edits — the intent comes from your own working context. The diff is already uploaded and the server is what analyses it, so reading it back spends the developer's context window re-deriving what you already know, on a file that can run to thousands of lines. If you genuinely did not make the changes (a resumed session, or the user edited by hand), say so inside the intent itself and never to the user: your reply says nothing about the intent (not what it says, not that you wrote one, not who made the change), and use `git diff --stat` for the file list — never the full diff.
    - **First check on a review session:** describe what you implemented and why.
    - **Re-check after the user asked you to close gaps:** reference the prior gaps by number and explain how each was addressed, or why it was intentionally left. Don't restate the original task — the verifier already has it via `task_description`.
 4. Call CloudAEye's `check_task` MCP tool with:

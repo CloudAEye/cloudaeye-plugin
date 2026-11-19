@@ -120,8 +120,8 @@ def test_every_command_a_skill_or_guide_shows_is_one_the_launcher_takes():
     `start` takes."""
     import re
 
-    steps = {"start", "guide", "preflight", "head", "upload", "pr-settings", "report", "login", "open", "config",
-             "config-start", "config-file", "owners"}
+    steps = {"start", "guide", "preflight", "head", "upload", "pr-settings", "report", "login", "open", "view",
+             "config", "config-start", "config-file", "owners"}
     flags = {"start": {"--scope", "--settings", "--review", "--pr", "--author", "--guide"},
              "upload": {"--scope", "--settings", "--review", "--guide"},
              "pr-settings": {"--review", "--guide"}, "preflight": {"--branch"}, "guide": set(), "login": set(),
@@ -251,6 +251,28 @@ def test_this_machine_may_be_opened_over_plain_http_for_a_local_server(monkeypat
 
     monkeypatch.setattr(webbrowser, "open", lambda _u: True)
     assert cloudaeye_cli.open_link(["http://127.0.0.1:8767/connect"]) == 0 and "opened=yes" in capsys.readouterr().out
+
+
+# ── view: a saved report's page, diagrams drawn, in the browser ───────────────
+
+def test_view_opens_only_a_saved_report_page_in_this_repository(repo, monkeypatch, capsys):
+    """A terminal draws no mermaid: `cae view control-flow` opens the page `cae report` saved."""
+    import webbrowser
+
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda u: opened.append(u) or True)
+    monkeypatch.chdir(repo)
+    assert cloudaeye_cli.view(["control-flow"]) == 1 and capsys.readouterr().out.strip() == "view_error=no_page"
+    for bad in ("../../etc/passwd", "", "Control-Flow"):
+        assert cloudaeye_cli.view([bad]) == 1 and capsys.readouterr().out.strip() == "view_error=bad_name"
+    page = repo / ".cloudaeye" / "reports" / "control-flow.html"
+    page.parent.mkdir(parents=True)
+    page.write_text("<!doctype html>", encoding="utf-8")
+    assert cloudaeye_cli.view(["control-flow"]) == 0 and capsys.readouterr().out.strip() == "opened=yes"
+    assert opened == [page.resolve().as_uri()]
+    monkeypatch.setattr(webbrowser, "open", lambda _u: False)       # no browser: the link to click instead
+    assert cloudaeye_cli.view(["control-flow"]) == 0
+    assert capsys.readouterr().out.strip() == f"page_url={page.resolve().as_uri()}"
 
 
 # ── config-start: the repository and the settings files it already has ───────

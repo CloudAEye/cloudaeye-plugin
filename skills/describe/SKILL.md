@@ -51,7 +51,7 @@ again and again, with no pause, while `status` is `queued`, `running` or
    |---|---|
    | `cloudaeye_error=…` | Stop and report it. Never print `upload_token` or `key_token`. |
    | `diff_bytes=0` | Nothing pending — report "nothing to describe" and stop. |
-   | `base_source=fork_point` | The right baseline: the fork point off the integrated branch, not its tip. Name the branch and `base_age`; a very old baseline may miss newer merged work. |
+   | `base_source=fork_point` | The right baseline. Say it in one short line and nothing more, with no code formatting: *Baseline: <branch> at its fork point, <base_age> ago.* When `base_age` is weeks old, add that newer merged work is not in it. |
    | `base_source=head` | Degraded: only working-tree edits are in the diff. Say so. If `SESSION` carries `setup_required`, report its `reason` and `remedy` as written; never quote `target_branch_error`, which names an internal record. |
    | `upload_http=` not `200` | The diff never reached the server. Stop; otherwise a stale result can look clean. |
 

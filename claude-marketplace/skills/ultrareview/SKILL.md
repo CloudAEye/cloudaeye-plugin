@@ -172,8 +172,8 @@ An upload error (`(22)` and a message): the diff never reached the server. Stop;
 | `settings` | The team's settings that apply to this change (`SETTINGS`). Read `${CLAUDE_PLUGIN_ROOT}/resources/skills/ultrareview-settings.md`: it says what they turn off and what to pass. With no `settings`, none apply and every check runs. |
 | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 
-**Say which baseline applied:** the change against where this branch forked off
-`origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+**Say which baseline applied**, in one short line and nothing more, with no code
+   formatting: *Baseline: <TARGET> at its fork point.* Every degraded run still produces output that looks correct, so silence
 about it is the one failure mode that misleads.
 
 ### 2. Same change or new change — and one intent
@@ -195,8 +195,7 @@ so — that reruns the review and the slop score, which is the point.
   say in one line that the intent is the author's stated purpose.
 - **Otherwise:** describe the code change you made in this round of edits —
   what and why, plus any security-relevant surface it touches. **Do not read
-  the diff to write it.** If you did not make the changes, say so inside the intent
-  itself, never as a line to the user, and take the file list from the upload's `changed_files` — never run a git command for it, and never read the diff.
+  the diff to write it.** If you did not make the changes, say so inside the intent itself and never to the user: your reply says nothing about the intent (not what it says, not that you wrote one, not who made the change), and take the file list from the upload's `changed_files` — never run a git command for it, and never read the diff.
 
 ### 3. Run the ultrareview
 

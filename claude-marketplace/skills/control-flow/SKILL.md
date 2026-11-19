@@ -88,8 +88,8 @@ prompt for a key.
    | `settings` | The team's settings that apply to this change (`SETTINGS`). Use `SETTINGS.control_flow`'s values as below. With no `settings`, none apply. |
    | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+   **Say which baseline applied**, in one short line and nothing more, with no code
+   formatting: *Baseline: <TARGET> at its fork point.* Every degraded run still produces output that looks correct, so silence
    about it is the one failure mode that misleads.
 2. Your settings — the `.cloudaeye.config` files in the repository that cover this
    change's files (files your team commits). On the working tree they are the upload's
@@ -126,25 +126,32 @@ prompt for a key.
    `posted.already_posted`, or the delivery `status` and `note` when it is not `ok`.
    Offer to print the whole card here, then stop.
 
-   **On the working tree:** first save the full report, which has the diagrams, with this one
-   command:
+   **On the working tree:** first save the full report, and beside it the same report as a web
+   page with the diagrams drawn, with this one command:
 
    ```bash
-   mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'url = "%s"\nheader = "X-Report-Token:%s"\n' '<result.report.url>' '<result.report.token>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl -o .cloudaeye/reports/control-flow.md && echo 'report_path=.cloudaeye/reports/control-flow.md'
+   mkdir -p .cloudaeye/reports && echo '*' | tee .cloudaeye/.gitignore && printf 'header = "X-Report-Token:%s"\nurl = "%s"\noutput = ".cloudaeye/reports/control-flow.md"\nurl = "%s?format=html"\noutput = ".cloudaeye/reports/control-flow.html"\n' '<result.report.token>' '<result.report.url>' '<result.report.url>' | tee .cloudaeye/report.curl && curl -sS --fail-with-body -K .cloudaeye/report.curl && echo 'report_path=.cloudaeye/reports/control-flow.md page_path=.cloudaeye/reports/control-flow.html'
    ```
 
    Then your final message is **the resolved response's `card`, exactly as given and whole** (it is
    the card as a terminal can show it: its opening "This code change …" line, the table and each
-   flow's sentence), followed by one line, `Full report with diagrams: <report_path>` (on
-   `report_error=…`, say the full report could not be saved and why). The card is the answer: a
-   reply that is only the baseline line and the file path tells the developer nothing. Never open,
-   read or print that file yourself.
+   flow's sentence), followed by one line: when `page_path=` was printed,
+   `Diagrams: [open control-flow.html in your browser](file://<TOP>/.cloudaeye/reports/control-flow.html) — or ask me to open it.`
+   (`TOP` as the repository root from step 1, with forward slashes); otherwise
+   `Full report with diagrams: <report_path>` (on `report_error=…`, say the full report could not
+   be saved and why). The card is the answer: a reply that is only the baseline line and the file
+   path tells the developer nothing. Never open, read or print either file yourself unless the user
+   asks to see the diagrams.
 
-   The fence is standard mermaid and stays mermaid: it is the same block that
-   gets posted on the pull request, so what the developer reads here must be
-   what their reviewer sees there. Do not redraw it as ASCII, flatten it for
-   the terminal, or summarise the arrows in prose. If asked to render it: it
-   renders in the artifact viewer, on GitHub, and in any markdown preview.
+   In the terminal each diagram arrives as **a numbered list of its calls**, every call
+   marked added, removed or moved in words, under the same headings the diagrams have.
+   The page has the mermaid diagrams themselves, drawn as a pull request draws them.
+   Print the lists as they come, as markdown and never inside a code block. Never
+   say the diagrams are missing, never draw your own, and never summarise the calls in
+   prose. **When the user asks to see the diagrams**, open the page with the system's
+   own opener — `open .cloudaeye/reports/control-flow.html` on macOS,
+   `start "" .cloudaeye/reports/control-flow.html` on Windows,
+   `xdg-open .cloudaeye/reports/control-flow.html` on Linux — and say it opened.
 
    The card is rendered server-side because what it may show is the feature.
    Four things it carries are invisible once reformatted away:
@@ -154,11 +161,11 @@ prompt for a key.
    - **a facts table** — why this flow, what the call sequence did, how much of
      the change is *not* in the diagram, and the cross-repository line. Its
      "Changes not shown" row is the one number nothing else carries;
-   - a call the code graph could not follow is a **dashed arrow to a named
-     receiver**, explained in the legend — there is no list of them to print;
+   - calls the code graph could not follow are counted (`unresolved`), not
+     listed: there is no list of them to print;
    - the footer says the diagram is structure, not a trace.
 
-   **Two diagrams, under `### Before` and `### After`, whenever the call
+   **Two diagrams (two numbered lists here), under `### Before` and `### After`, whenever the call
    sequence moved** — additions included. Both declare the same participants
    in the same order, so one collaborator can be tracked straight down the
    page. Print both, headings included: dropping Before turns a comparison into

@@ -67,8 +67,8 @@ again and again, with no pause, while `status` is `queued`, `running` or
    | `diff_files` is `0` | Nothing pending — report "nothing to describe" and stop. |
    | `changed_files` | The changed paths (up to 20, `more_files` beyond). Take a file list from here, never from a git command of your own. |
 
-   **Say which baseline applied:** the change against where this branch forked off
-   `origin/<TARGET>`. Every degraded run still produces output that looks correct, so silence
+   **Say which baseline applied**, in one short line and nothing more, with no code
+   formatting: *Baseline: <TARGET> at its fork point.* Every degraded run still produces output that looks correct, so silence
    about it is the one failure mode that misleads.
 2. Call CloudAEye's `describe_change` MCP tool with:
    - `session_id`: `SESSION.session_id`
